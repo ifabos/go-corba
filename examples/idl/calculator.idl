@@ -1,0 +1,24 @@
+// Calculator service IDL
+module Calculator {
+    // Exception for division by zero
+    exception DivByZeroException {
+        string message;
+    };
+    
+    // Calculator interface
+    interface Calc {
+        // Basic arithmetic operations
+        double add(in double a, in double b);
+        double subtract(in double a, in double b);
+        double multiply(in double a, in double b);
+        double divide(in double a, in double b) raises (DivByZeroException);
+        
+        // Memory operations
+        void storeValue(in double value);
+        double recallValue();
+        void clearMemory();
+        
+        // Read-only attribute for tracking operation count
+        readonly attribute long operationCount;
+    };
+};
