@@ -14,27 +14,29 @@ type ORB struct {
 	serverRunning       bool
 	defaultContext      *Context
 	requestProcessor    *RequestProcessor
-	interfaceRepository InterfaceRepository // Add IR instance field
+	interfaceRepository InterfaceRepository
+	interceptorRegistry *InterceptorRegistry // Add interceptor registry
 }
 
 // Constants for well-known CORBA service names
 const (
 	NamingServiceName       = "NameService"
-	InterfaceRepositoryName = "InterfaceRepository" // Add InterfaceRepository name constant
+	InterfaceRepositoryName = "InterfaceRepository"
 )
 
 // Global variables
 var (
 	namingServiceInstance *NamingServiceServant
-	irServiceInstance     *InterfaceRepositoryServant // Add IR service instance
+	irServiceInstance     *InterfaceRepositoryServant
 )
 
 // Init initializes and returns a new ORB instance
 func Init() *ORB {
 	orb := &ORB{
-		objectMap:      make(map[string]interface{}),
-		isInitialized:  true,
-		defaultContext: NewContext(),
+		objectMap:           make(map[string]interface{}),
+		isInitialized:       true,
+		defaultContext:      NewContext(),
+		interceptorRegistry: NewInterceptorRegistry(), // Initialize interceptor registry
 	}
 	orb.requestProcessor = NewRequestProcessor(orb)
 
@@ -260,4 +262,82 @@ func (orb *ORB) RegisterInterface(obj interface{}, id string, name string) error
 	}
 
 	return nil
+}
+
+// GetInterceptorRegistry returns the interceptor registry
+func (orb *ORB) GetInterceptorRegistry() *InterceptorRegistry {
+	return orb.interceptorRegistry
+}
+
+// RegisterClientRequestInterceptor registers a client request interceptor with the ORB
+func (orb *ORB) RegisterClientRequestInterceptor(interceptor ClientRequestInterceptor) {
+	orb.interceptorRegistry.RegisterClientRequestInterceptor(interceptor)
+}
+
+// RegisterServerRequestInterceptor registers a server request interceptor with the ORB
+func (orb *ORB) RegisterServerRequestInterceptor(interceptor ServerRequestInterceptor) {
+	orb.interceptorRegistry.RegisterServerRequestInterceptor(interceptor)
+}
+
+// RegisterIORInterceptor registers an IOR interceptor with the ORB
+func (orb *ORB) RegisterIORInterceptor(interceptor IORInterceptor) {
+	orb.interceptorRegistry.RegisterIORInterceptor(interceptor)
+}
+
+// ActivateTransactionService initializes and registers the Transaction Service with this ORB
+func (orb *ORB) ActivateTransactionService(server *Server) error {
+	orb.mu.Lock()
+	defer orb.mu.Unlock()
+
+	// Check if the Transaction Service is already activated
+	if transactionServiceInstance != nil {
+		return fmt.Errorf("transaction service is already active")
+	}
+
+	// Create a new Transaction Service implementation
+	transactionServiceInstance = NewTransactionServiceImpl(orb)
+
+	// Create a servant for the Transaction Service
+	txnServant := &TransactionServiceServant{
+		service: transactionServiceInstance,
+	}
+
+	// Register the Transaction Service with the server
+	if err := server.RegisterServant(TransactionServiceName, txnServant); err != nil {
+		return fmt.Errorf("failed to register transaction service: %w", err)
+	}
+
+	return nil
+}
+
+// GetTransactionService returns the Transaction Service instance
+func (orb *ORB) GetTransactionService() (*TransactionServiceImpl, error) {
+	orb.mu.RLock()
+	defer orb.mu.RUnlock()
+
+	if transactionServiceInstance == nil {
+		return nil, fmt.Errorf("transaction service is not active")
+	}
+
+	return transactionServiceInstance, nil
+}
+
+// ResolveTransactionService connects to a remote Transaction Service
+func (orb *ORB) ResolveTransactionService(host string, port int) (*TransactionServiceClient, error) {
+	client := orb.CreateClient()
+
+	// Connect to the server
+	err := client.Connect(host, port)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to transaction service: %w", err)
+	}
+
+	// Get a reference to the Transaction Service object
+	objRef, err := client.GetObject(TransactionServiceName, host, port)
+	if err != nil {
+		client.Disconnect(host, port)
+		return nil, fmt.Errorf("failed to get transaction service reference: %w", err)
+	}
+
+	return NewTransactionServiceClient(objRef), nil
 }

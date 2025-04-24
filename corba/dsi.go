@@ -183,14 +183,3 @@ func (adapter *DynamicServantAdapter) Dispatch(methodName string, args []interfa
 	// Return the result
 	return request.Result, nil
 }
-
-// RegisterDynamicServant registers a DynamicImplementation servant with the server
-func (s *Server) RegisterDynamicServant(objectName string, servant DynamicImplementation) error {
-	// Create an adapter to bridge between the DynamicImplementation and the regular servant interface
-	adapter := &DynamicServantAdapter{
-		Servant: servant,
-	}
-
-	// Register the adapter as a regular servant
-	return s.RegisterServant(objectName, adapter)
-}
