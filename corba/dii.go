@@ -97,10 +97,10 @@ func (r *Request) GetResult() interface{} {
 }
 
 // Invoke sends the request and waits for a response
-func (r *Request) Invoke() error {
+func (r *Request) Invoke() (interface{}, error) {
 	// Check if the target is valid
 	if r.Target == nil || r.Target.IsNil() {
-		return NewCORBASystemException("OBJECT_NOT_EXIST", 0, CompletionStatusNo)
+		return nil, NewCORBASystemException("OBJECT_NOT_EXIST", 0, CompletionStatusNo)
 	}
 
 	// Set the request status to in progress
@@ -117,14 +117,14 @@ func (r *Request) Invoke() error {
 	if err != nil {
 		r.Status = StatusError
 		r.Exception = err
-		return err
+		return nil, err
 	}
 
 	// Store the result
 	r.Result.Value = result
 	r.ResponseReceived = true
 	r.Status = StatusCompleted
-	return nil
+	return result, nil
 }
 
 // SendDeferred sends the request asynchronously
@@ -134,7 +134,8 @@ func (r *Request) SendDeferred() error {
 
 	// Future implementation will use goroutines to handle this properly
 	// For now, we'll do a synchronous call as a placeholder
-	return r.Invoke()
+	_, err := r.Invoke()
+	return err
 }
 
 // PollResponse checks if a deferred response has been received

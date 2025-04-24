@@ -51,7 +51,7 @@ func InvokeDII() {
 	}
 
 	// Invoke the request
-	err = request.Invoke()
+	_, err = request.Invoke()
 	if err != nil {
 		fmt.Printf("Invocation failed: %v\n", err)
 		os.Exit(1)
@@ -90,7 +90,7 @@ func InvokeDII() {
 	)
 
 	// Invoke the request
-	err = subtractRequest.Invoke()
+	_, err = subtractRequest.Invoke()
 	if err != nil {
 		fmt.Printf("Invocation failed: %v\n", err)
 		os.Exit(1)
@@ -115,7 +115,7 @@ func InvokeDII() {
 	}
 
 	// Send without waiting for response
-	err = logRequest.Invoke()
+	_, err = logRequest.Invoke()
 	if err != nil {
 		fmt.Printf("One-way invocation failed: %v\n", err)
 		os.Exit(1)

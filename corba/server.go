@@ -235,6 +235,23 @@ func (s *Server) handleGIOPRequest(conn net.Conn, request *giop.RequestHeader) {
 	// Convert object key to string
 	objectName := string(request.ObjectKey)
 
+	// Create request info for interceptors
+	reqInfo := &RequestInfo{
+		Operation:        request.Operation,
+		ObjectKey:        objectName,
+		RequestID:        request.RequestID,
+		ResponseExpected: request.ResponseExpected,
+		Arguments:        []interface{}{}, // Will be populated by unmarshalling if implemented
+	}
+
+	// Convert service contexts
+	for _, ctx := range request.ServiceContexts {
+		reqInfo.ServiceContexts = append(reqInfo.ServiceContexts, ServiceContext{
+			ID:   ctx.ID,
+			Data: ctx.Data,
+		})
+	}
+
 	// Find the object in the ORB
 	obj, err := s.orb.ResolveObject(objectName)
 	if err != nil {
@@ -255,21 +272,79 @@ func (s *Server) handleGIOPRequest(conn net.Conn, request *giop.RequestHeader) {
 		return
 	}
 
+	// Store servant in request info
+	reqInfo.Servant = invoker
+
+	// Get server request interceptors
+	interceptors := s.orb.GetInterceptorRegistry().GetServerRequestInterceptors()
+
+	// Call server request interceptors - ReceiveRequest
+	for _, interceptor := range interceptors {
+		if err := interceptor.ReceiveRequest(reqInfo); err != nil {
+			if ex, ok := err.(Exception); ok {
+				// Call SendException on all interceptors
+				for _, i := range interceptors {
+					i.SendException(reqInfo, ex)
+				}
+				s.sendExceptionReply(conn, request.RequestID, ex)
+			} else {
+				// Convert generic error to CORBA system exception
+				sysEx := UNKNOWN(1, CompletionStatusNo)
+				// Call SendException on all interceptors
+				for _, i := range interceptors {
+					i.SendException(reqInfo, sysEx)
+				}
+				s.sendExceptionReply(conn, request.RequestID, sysEx)
+			}
+			return
+		}
+	}
+
 	// Safely invoke the method and convert any errors to exceptions
 	result, ex := SafeInvoke(func() (interface{}, error) {
 		// In a real implementation, we would extract arguments from the request body
-		// For now, we just call the method without arguments
-		return invoker.Dispatch(request.Operation, []interface{}{})
+		// For now, we just call the method without arguments or with arguments from reqInfo if modified by interceptors
+		return invoker.Dispatch(request.Operation, reqInfo.Arguments)
 	})
+
+	// Store result and exception in request info
+	reqInfo.Result = result
+	reqInfo.Exception = ex
 
 	if ex != nil {
 		// Method invocation failed with an exception
+		// Call server request interceptors - SendException
+		for _, interceptor := range interceptors {
+			interceptor.SendException(reqInfo, ex)
+		}
 		s.sendExceptionReply(conn, request.RequestID, ex)
 		return
 	}
 
-	// Send a successful reply
-	s.sendSuccessReply(conn, request.RequestID, result)
+	// Call server request interceptors - SendReply
+	for _, interceptor := range interceptors {
+		if err := interceptor.SendReply(reqInfo); err != nil {
+			if ex, ok := err.(Exception); ok {
+				// Call SendException on all interceptors
+				for _, i := range interceptors {
+					i.SendException(reqInfo, ex)
+				}
+				s.sendExceptionReply(conn, request.RequestID, ex)
+			} else {
+				// Convert generic error to CORBA system exception
+				sysEx := UNKNOWN(1, CompletionStatusNo)
+				// Call SendException on all interceptors
+				for _, i := range interceptors {
+					i.SendException(reqInfo, sysEx)
+				}
+				s.sendExceptionReply(conn, request.RequestID, sysEx)
+			}
+			return
+		}
+	}
+
+	// Send a successful reply, using potentially modified result from interceptors
+	s.sendSuccessReply(conn, request.RequestID, reqInfo.Result)
 }
 
 // handleGIOPLocateRequest processes a GIOP locate request message
@@ -289,7 +364,7 @@ func (s *Server) handleGIOPLocateRequest(conn net.Conn, request *giop.LocateRequ
 	s.sendLocateReply(conn, request.RequestID, giop.LocateStatusObjectHere)
 }
 
-// sendSuccessReply sends a successful reply with a result
+// sendSuccessReply sends a successful reply message
 func (s *Server) sendSuccessReply(conn net.Conn, requestID uint32, _ interface{}) {
 	// Create reply header
 	replyHeader := &giop.ReplyHeader{
@@ -304,46 +379,19 @@ func (s *Server) sendSuccessReply(conn net.Conn, requestID uint32, _ interface{}
 		Body:   replyHeader,
 	}
 
-	// In a real implementation, we would add the result value to the body
-	// For now, we just send the reply header
+	// In a real implementation, we would marshal the result here
+	// For now, we'll leave it as a placeholder
 
 	// Marshal the message
 	data, err := giop.MarshalGIOPMessage(replyMsg)
 	if err != nil {
-		fmt.Printf("Error marshalling success reply: %v\n", err)
+		fmt.Printf("Error marshalling reply: %v\n", err)
 		return
 	}
 
 	// Send the reply
 	if _, err := conn.Write(data); err != nil {
-		fmt.Printf("Error sending success reply: %v\n", err)
-	}
-}
-
-// sendLocateReply sends a locate reply
-func (s *Server) sendLocateReply(conn net.Conn, requestID uint32, status uint32) {
-	// Create locate reply header
-	locateHeader := &giop.LocateReplyHeader{
-		RequestID: requestID,
-		Status:    status,
-	}
-
-	// Create a locate reply message
-	locateMsg := &giop.Message{
-		Header: giop.NewMessageHeader(giop.MsgLocateReply, 0), // Size will be set during marshalling
-		Body:   locateHeader,
-	}
-
-	// Marshal the message
-	data, err := giop.MarshalGIOPMessage(locateMsg)
-	if err != nil {
-		fmt.Printf("Error marshalling locate reply: %v\n", err)
-		return
-	}
-
-	// Send the reply
-	if _, err := conn.Write(data); err != nil {
-		fmt.Printf("Error sending locate reply: %v\n", err)
+		fmt.Printf("Error sending reply: %v\n", err)
 	}
 }
 
@@ -399,7 +447,47 @@ func (s *Server) sendExceptionReply(conn net.Conn, requestID uint32, ex Exceptio
 	}
 }
 
-// generateServiceID creates a unique service ID for a binding
-func generateServiceID(name string) string {
-	return fmt.Sprintf("IDL:%s:1.0", name)
+// sendLocateReply sends a locate reply
+func (s *Server) sendLocateReply(conn net.Conn, requestID uint32, status uint32) {
+	// Create locate reply header
+	locateHeader := &giop.LocateReplyHeader{
+		RequestID: requestID,
+		Status:    status,
+	}
+
+	// Create a locate reply message
+	locateMsg := &giop.Message{
+		Header: giop.NewMessageHeader(giop.MsgLocateReply, 0), // Size will be set during marshalling
+		Body:   locateHeader,
+	}
+
+	// Marshal the message
+	data, err := giop.MarshalGIOPMessage(locateMsg)
+	if err != nil {
+		fmt.Printf("Error marshalling locate reply: %v\n", err)
+		return
+	}
+
+	// Send the reply
+	if _, err := conn.Write(data); err != nil {
+		fmt.Printf("Error sending locate reply: %v\n", err)
+	}
+}
+
+// generateServiceID generates a unique service ID for a server binding
+func generateServiceID(objectName string) string {
+	// In a real implementation, this would generate a unique ID
+	// For now, we'll just use the object name
+	return objectName
+}
+
+// RegisterDynamicServant registers a DynamicImplementation servant with the server
+func (s *Server) RegisterDynamicServant(objectName string, servant DynamicImplementation) error {
+	// Create a dynamic servant adapter
+	adapter := &DynamicServantAdapter{
+		Servant: servant,
+	}
+
+	// Register the adapter as a normal servant
+	return s.RegisterServant(objectName, adapter)
 }

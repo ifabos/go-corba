@@ -100,6 +100,39 @@ func (c *Client) InvokeMethod(objectName string, methodName string, serverHost s
 	// Create a GIOP request message
 	requestMsg := giop.NewRequestMessage(requestID, objectKey, methodName, true)
 
+	// Create request info for interceptors
+	reqInfo := &RequestInfo{
+		Operation:        methodName,
+		ObjectKey:        objectName,
+		Arguments:        args,
+		RequestID:        requestID,
+		ResponseExpected: true,
+		ServiceContexts:  []ServiceContext{},
+	}
+
+	// Call client request interceptors - SendRequest
+	interceptors := c.orb.GetInterceptorRegistry().GetClientRequestInterceptors()
+	for _, interceptor := range interceptors {
+		if err := interceptor.SendRequest(reqInfo); err != nil {
+			return nil, err
+		}
+	}
+
+	// Update service contexts from interceptors
+	for _, ctx := range reqInfo.ServiceContexts {
+		requestHeader, ok := requestMsg.Body.(*giop.RequestHeader)
+		if !ok {
+			return nil, fmt.Errorf("invalid request message format")
+		}
+		requestHeader.ServiceContexts = append(
+			requestHeader.ServiceContexts,
+			giop.ServiceContext{
+				ID:   ctx.ID,
+				Data: ctx.Data,
+			},
+		)
+	}
+
 	// Marshal the arguments using CDR
 	if len(args) > 0 {
 		// For now, simply store the arguments as a placeholder
@@ -159,26 +192,70 @@ func (c *Client) InvokeMethod(objectName string, methodName string, serverHost s
 		return nil, fmt.Errorf("mismatched request ID: expected %d, got %d", requestID, replyHeader.RequestID)
 	}
 
+	// Convert service contexts to our format for interceptors
+	for _, ctx := range replyHeader.ServiceContexts {
+		reqInfo.ServiceContexts = append(reqInfo.ServiceContexts, ServiceContext{
+			ID:   ctx.ID,
+			Data: ctx.Data,
+		})
+	}
+
+	var result interface{} = "placeholder result"
+	var exception Exception
+
 	// Check the reply status
 	if replyHeader.ReplyStatus != giop.ReplyStatusNoException {
 		switch replyHeader.ReplyStatus {
 		case giop.ReplyStatusUserException, giop.ReplyStatusSystemException:
-			exception, err := c.handleExceptionReply(replyHeader)
+			exception, err = c.handleExceptionReply(replyHeader)
 			if err != nil {
 				return nil, err
 			}
+
+			// Call client request interceptors - ReceiveException
+			for _, interceptor := range interceptors {
+				if err := interceptor.ReceiveException(reqInfo, exception); err != nil {
+					return nil, err
+				}
+			}
+
 			return nil, exception
+
 		case giop.ReplyStatusLocationForward:
+			// Call client request interceptors - ReceiveOther
+			for _, interceptor := range interceptors {
+				if err := interceptor.ReceiveOther(reqInfo); err != nil {
+					return nil, err
+				}
+			}
+
 			return nil, fmt.Errorf("location forward")
+
 		default:
+			// Call client request interceptors - ReceiveOther for unknown status
+			for _, interceptor := range interceptors {
+				if err := interceptor.ReceiveOther(reqInfo); err != nil {
+					return nil, err
+				}
+			}
+
 			return nil, fmt.Errorf("unknown reply status: %d", replyHeader.ReplyStatus)
 		}
 	}
 
 	// In a real implementation, we'd unmarshal the return value from the reply body
-	// based on the expected return type from the IDL definition
-	// For now, we'll just return a placeholder
-	return "placeholder result", nil
+	// For the placeholder, we'll set the result in the request info
+	reqInfo.Result = result
+
+	// Call client request interceptors - ReceiveReply
+	for _, interceptor := range interceptors {
+		if err := interceptor.ReceiveReply(reqInfo); err != nil {
+			return nil, err
+		}
+	}
+
+	// Return potentially modified result from interceptors
+	return reqInfo.Result, nil
 }
 
 // handleExceptionReply processes a GIOP exception reply
