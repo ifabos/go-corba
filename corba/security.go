@@ -138,7 +138,7 @@ var (
 	}
 )
 
-// Principal represents a security principal (user or system entity)
+// SecurityPrincipal represents a security principal (user or system entity)
 type Principal interface {
 	// Name returns the principal name
 	Name() string
@@ -151,6 +151,10 @@ type Principal interface {
 
 	// HasPrivilege checks if the principal has a specific privilege
 	HasPrivilege(privilegeName string) bool
+
+	Roles() []string
+
+	IsInRole(string) bool
 }
 
 // Privilege represents a security privilege
@@ -238,4 +242,54 @@ func init() {
 	// Register security exceptions with the exception system
 	// This will allow them to be properly identified when received over the wire
 	RegisterException("IDL:omg.org/Security/InvalidCredentials:1.0", &SecurityException{})
+}
+
+// BasicPrincipal provides a simple implementation of Principal
+type BasicPrincipal struct {
+	PrincipalName        string
+	PrincipalRoles       []string
+	AuthenticationMethod AuthenticationMethod
+	Privileges           []Privilege
+}
+
+// IsInRole checks if this principal has a specific role
+func (p *BasicPrincipal) IsInRole(role string) bool {
+	for _, r := range p.PrincipalRoles {
+		if r == role {
+			return true
+		}
+	}
+	return false
+}
+
+// HasPrivilege checks if the principal has a specific privilege
+func (p *BasicPrincipal) HasPrivilege(privilegeName string) bool {
+	for _, p := range p.Privileges {
+		for _, r := range p.Rights {
+			if r == privilegeName {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Name returns the principal name
+func (p *BasicPrincipal) Name() string {
+	return p.PrincipalName
+}
+
+// AuthenticationType returns the authentication method
+func (p *BasicPrincipal) AuthenticationType() AuthenticationMethod {
+	return p.AuthenticationMethod
+}
+
+// PrivilegeList returns the privileges assigned to the principal
+func (p *BasicPrincipal) PrivilegeList() []Privilege {
+	return append([]Privilege{}, p.Privileges...)
+}
+
+// Roles returns the roles assigned to the principal
+func (p *BasicPrincipal) Roles() []string {
+	return p.PrincipalRoles
 }

@@ -1,3 +1,4 @@
+// Package corba provides CORBA functionality for Go
 package corba
 
 import (
@@ -16,9 +17,11 @@ type ORB struct {
 	defaultContext      *Context
 	requestProcessor    *RequestProcessor
 	interfaceRepository InterfaceRepository
-	interceptorRegistry *InterceptorRegistry // Add interceptor registry
-	rootPOA             *POA                 // Add root POA
-	poaManagers         []*POAManager        // Add POA managers
+	interceptorRegistry *InterceptorRegistry    // Add interceptor registry
+	rootPOA             *POA                    // Add root POA
+	poaManagers         []*POAManager           // Add POA managers
+	containerManager    *ContainerManager       // Add container manager for CCM
+	componentServer     *ComponentServerServant // Add component server for CCM
 }
 
 // Constants for well-known CORBA service names
@@ -26,12 +29,14 @@ const (
 	NamingServiceName       = "NameService"
 	InterfaceRepositoryName = "InterfaceRepository"
 	RootPOAName             = "RootPOA"
+	ComponentServerName     = "ComponentServer" // Add name for component server
 )
 
 // Global variables
 var (
-	namingServiceInstance *NamingServiceServant
-	irServiceInstance     *InterfaceRepositoryServant
+	namingServiceInstance   *NamingServiceServant
+	irServiceInstance       *InterfaceRepositoryServant
+	componentServerInstance *ComponentServerServant // Add global component server instance
 )
 
 // Init initializes and returns a new ORB instance
@@ -590,4 +595,150 @@ func (orb *ORB) GetPOAManager(index int) (*POAManager, error) {
 // CreatePOAManager creates a new POA manager
 func (orb *ORB) CreatePOAManager() *POAManager {
 	return orb.NewPOAManager()
+}
+
+// GetContainerManager returns the CCM container manager, creating it if it doesn't exist
+func (orb *ORB) GetContainerManager() *ContainerManager {
+	orb.mu.Lock()
+	defer orb.mu.Unlock()
+
+	if orb.containerManager == nil {
+		orb.containerManager = NewContainerManager(orb)
+	}
+
+	return orb.containerManager
+}
+
+// GetComponentServer returns the component server, creating it if it doesn't exist
+func (orb *ORB) GetComponentServer() *ComponentServerServant {
+	orb.mu.Lock()
+	defer orb.mu.Unlock()
+
+	if orb.componentServer == nil {
+		orb.componentServer = NewComponentServerServant(orb, orb.GetContainerManager())
+	}
+
+	return orb.componentServer
+}
+
+// ActivateComponentServer initializes and registers the Component Server with this ORB
+func (orb *ORB) ActivateComponentServer(server *Server) error {
+	orb.mu.Lock()
+	defer orb.mu.Unlock()
+
+	// Check if the component server is already activated
+	if componentServerInstance != nil {
+		return fmt.Errorf("component server is already active")
+	}
+
+	// Create the component server
+	componentServerInstance = orb.GetComponentServer()
+
+	// Register the component server with the server
+	if err := server.RegisterServant(ComponentServerName, componentServerInstance); err != nil {
+		return fmt.Errorf("failed to register component server: %w", err)
+	}
+
+	// Initialize standard CCM containers
+	if err := componentServerInstance.GetContainerManager().CreateStandardContainers(); err != nil {
+		return fmt.Errorf("failed to create standard containers: %w", err)
+	}
+
+	return nil
+}
+
+// CreateComponent creates a new component of the specified type using the appropriate container
+func (orb *ORB) CreateComponent(componentType ComponentType, category ComponentCategory) (Component, error) {
+	// Get the component server
+	componentServer := orb.GetComponentServer()
+
+	// Determine the home name based on component type
+	homeName := ""
+	switch componentType {
+	case ServiceComponent:
+		homeName = "ServiceHome"
+	case SessionComponent:
+		homeName = "SessionHome"
+	case ProcessComponent:
+		homeName = "ProcessHome"
+	case EntityComponent:
+		homeName = "EntityHome"
+	default:
+		return nil, fmt.Errorf("invalid component type: %d", componentType)
+	}
+
+	// Get or create the component home
+	home, err := componentServer.GetOrCreateHomeByName(homeName, componentType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get component home: %w", err)
+	}
+
+	// Create the component
+	component, err := home.CreateComponent()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create component: %w", err)
+	}
+
+	return component, nil
+}
+
+// FindComponent finds a component by ID
+func (orb *ORB) FindComponent(id ComponentID) (Component, error) {
+	// Get the container manager
+	containerManager := orb.GetContainerManager()
+
+	// Find the container that hosts the component
+	container, err := containerManager.FindComponentContainer(id)
+	if err != nil {
+		return nil, fmt.Errorf("component not found: %w", err)
+	}
+
+	// Get the component from the container
+	component, err := container.FindComponent(id)
+	if err != nil {
+		return nil, fmt.Errorf("component not found in container: %w", err)
+	}
+
+	return component, nil
+}
+
+// CreateComponentReference creates an object reference for a component
+func (orb *ORB) CreateComponentReference(component Component) (*ObjectRef, error) {
+	// Get the container manager
+	containerManager := orb.GetContainerManager()
+
+	// Find the container that hosts the component
+	container, err := containerManager.FindComponentContainer(component.GetComponentID())
+	if err != nil {
+		return nil, fmt.Errorf("component not found in any container: %w", err)
+	}
+
+	// Get the POA for the container
+	poa := container.GetPOA()
+
+	// Create a reference type ID based on the component type
+	typeIDBase := ""
+	switch component.GetType() {
+	case ServiceComponent:
+		typeIDBase = "IDL:CORBA/ServiceComponent"
+	case SessionComponent:
+		typeIDBase = "IDL:CORBA/SessionComponent"
+	case ProcessComponent:
+		typeIDBase = "IDL:CORBA/ProcessComponent"
+	case EntityComponent:
+		typeIDBase = "IDL:CORBA/EntityComponent"
+	default:
+		typeIDBase = "IDL:CORBA/Component"
+	}
+
+	// Format the repository ID with version
+	repositoryID := fmt.Sprintf("%s:1.0", typeIDBase)
+
+	// Create an object ID for the component
+	objectID := []byte(string(component.GetComponentID()))
+
+	// Create the reference
+	ref := poa.CreateReferenceWithId(objectID, repositoryID)
+
+	return ref, nil
 }

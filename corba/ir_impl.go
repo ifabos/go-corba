@@ -11,7 +11,7 @@ import (
 type irObjectBase struct {
 	id             string
 	name           string
-	container      Container
+	container      IRContainer
 	definitionKind DefinitionKind
 }
 
@@ -23,7 +23,7 @@ func (obj *irObjectBase) Name() string {
 	return obj.name
 }
 
-func (obj *irObjectBase) Container() Container {
+func (obj *irObjectBase) Container() IRContainer {
 	return obj.container
 }
 
@@ -42,7 +42,7 @@ type containerBase struct {
 	contents map[string]IRObject
 }
 
-func newContainerBase(id, name string, kind DefinitionKind, container Container) *containerBase {
+func newContainerBase(id, name string, kind DefinitionKind, container IRContainer) *containerBase {
 	return &containerBase{
 		irObjectBase: irObjectBase{
 			id:             id,
@@ -98,7 +98,7 @@ func (c *containerBase) LookupName(search_name string, levels int, limit Definit
 		}
 
 		for _, obj := range c.contents {
-			if container, ok := obj.(Container); ok {
+			if container, ok := obj.(IRContainer); ok {
 				nestedResults := container.LookupName(search_name, nextLevel, limit)
 				results = append(results, nestedResults...)
 			}
@@ -132,7 +132,7 @@ type containedBase struct {
 	irObjectBase
 }
 
-func newContainedBase(id, name string, kind DefinitionKind, container Container) *containedBase {
+func newContainedBase(id, name string, kind DefinitionKind, container IRContainer) *containedBase {
 	return &containedBase{
 		irObjectBase: irObjectBase{
 			id:             id,
@@ -143,7 +143,7 @@ func newContainedBase(id, name string, kind DefinitionKind, container Container)
 	}
 }
 
-func (c *containedBase) Move(new_container Container, new_name string) error {
+func (c *containedBase) Move(new_container IRContainer, new_name string) error {
 	if new_container == nil {
 		return fmt.Errorf("cannot move to nil container")
 	}
@@ -255,10 +255,10 @@ func (r *repositoryImpl) LookupId(id string) (IRObject, error) {
 	defer r.mu.RUnlock()
 
 	// Create a lookup helper function that avoids redundant traversals
-	var lookupInContainer func(Container) IRObject
-	visited := make(map[Container]bool)
+	var lookupInContainer func(IRContainer) IRObject
+	visited := make(map[IRContainer]bool)
 
-	lookupInContainer = func(container Container) IRObject {
+	lookupInContainer = func(container IRContainer) IRObject {
 		// Avoid cycles
 		if visited[container] {
 			return nil
@@ -272,7 +272,7 @@ func (r *repositoryImpl) LookupId(id string) (IRObject, error) {
 			}
 
 			// Check nested containers
-			if nestedContainer, ok := obj.(Container); ok {
+			if nestedContainer, ok := obj.(IRContainer); ok {
 				if found := lookupInContainer(nestedContainer); found != nil {
 					return found
 				}
@@ -405,7 +405,7 @@ type moduleDefImpl struct {
 }
 
 // Resolve ambiguity by explicitly defining the Container method
-func (m *moduleDefImpl) Container() Container {
+func (m *moduleDefImpl) Container() IRContainer {
 	return m.containedBase.Container()
 }
 
@@ -440,7 +440,7 @@ type interfaceDefImpl struct {
 }
 
 // Resolve ambiguity by explicitly defining the Container method
-func (i *interfaceDefImpl) Container() Container {
+func (i *interfaceDefImpl) Container() IRContainer {
 	return i.containedBase.Container()
 }
 
@@ -597,7 +597,7 @@ func (p *primitiveTypeCode) DefKind() DefinitionKind {
 	return p.kind
 }
 
-func (p *primitiveTypeCode) Container() Container {
+func (p *primitiveTypeCode) Container() IRContainer {
 	return nil
 }
 
@@ -643,7 +643,7 @@ func (s *structDefImpl) AddMember(name string, type_code TypeCode) error {
 }
 
 // Fix method ambiguity in structDefImpl
-func (s *structDefImpl) Container() Container {
+func (s *structDefImpl) Container() IRContainer {
 	return s.containedBase.Container()
 }
 
@@ -701,7 +701,7 @@ func (e *exceptionDefImpl) AddMember(name string, type_code TypeCode) error {
 }
 
 // Fix method ambiguity in exceptionDefImpl
-func (e *exceptionDefImpl) Container() Container {
+func (e *exceptionDefImpl) Container() IRContainer {
 	return e.containedBase.Container()
 }
 
@@ -765,7 +765,7 @@ func (u *unionDefImpl) AddMember(name string, label interface{}, type_code TypeC
 }
 
 // Fix method ambiguity in unionDefImpl
-func (u *unionDefImpl) Container() Container {
+func (u *unionDefImpl) Container() IRContainer {
 	return u.containedBase.Container()
 }
 
@@ -820,7 +820,7 @@ func (e *enumDefImpl) AddMember(name string) error {
 }
 
 // Fix method ambiguity in enumDefImpl
-func (e *enumDefImpl) Container() Container {
+func (e *enumDefImpl) Container() IRContainer {
 	return e.containedBase.Container()
 }
 
@@ -855,7 +855,7 @@ func (a *aliasDefImpl) OriginalType() TypeCode {
 }
 
 // Fix method ambiguity in aliasDefImpl
-func (a *aliasDefImpl) Container() Container {
+func (a *aliasDefImpl) Container() IRContainer {
 	return a.containedBase.Container()
 }
 

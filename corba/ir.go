@@ -143,14 +143,14 @@ type IRObject interface {
 	Name() string
 
 	// Get the container of this IRObject
-	Container() Container
+	Container() IRContainer
 
 	// Get a description of this IRObject
 	Describe() string
 }
 
-// Container is an interface for IRObjects that can contain other IRObjects
-type Container interface {
+// IRContainer is an interface for IRObjects that can contain other IRObjects
+type IRContainer interface {
 	IRObject
 
 	// Get the list of contained objects
@@ -171,12 +171,12 @@ type Contained interface {
 	IRObject
 
 	// Move this object into another container
-	Move(new_container Container, new_name string) error
+	Move(new_container IRContainer, new_name string) error
 }
 
 // Repository is the root interface of the Interface Repository
 type Repository interface {
-	Container
+	IRContainer
 
 	// Lookup an object by its repository ID
 	LookupId(id string) (IRObject, error)
@@ -208,13 +208,13 @@ type Repository interface {
 
 // ModuleDef defines an IDL Module in the Interface Repository
 type ModuleDef interface {
-	Container
+	IRContainer
 	Contained
 }
 
 // InterfaceDef defines an IDL Interface in the Interface Repository
 type InterfaceDef interface {
-	Container
+	IRContainer
 	Contained
 
 	// Get the list of base interfaces
