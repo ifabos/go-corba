@@ -2,6 +2,7 @@ package corba
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -16,12 +17,15 @@ type ORB struct {
 	requestProcessor    *RequestProcessor
 	interfaceRepository InterfaceRepository
 	interceptorRegistry *InterceptorRegistry // Add interceptor registry
+	rootPOA             *POA                 // Add root POA
+	poaManagers         []*POAManager        // Add POA managers
 }
 
 // Constants for well-known CORBA service names
 const (
 	NamingServiceName       = "NameService"
 	InterfaceRepositoryName = "InterfaceRepository"
+	RootPOAName             = "RootPOA"
 )
 
 // Global variables
@@ -456,4 +460,81 @@ func (orb *ORB) ResolveNotificationService(host string, port int) (*Notification
 	}
 
 	return &NotificationServiceClient{objectRef: objRef}, nil
+}
+
+// GetRootPOA returns the root POA, creating it if it doesn't exist
+func (orb *ORB) GetRootPOA() *POA {
+	orb.mu.Lock()
+	defer orb.mu.Unlock()
+
+	if orb.rootPOA == nil {
+		orb.rootPOA = orb.NewRootPOA()
+	}
+
+	return orb.rootPOA
+}
+
+// GetPOA retrieves a POA by its name path, separated by "/"
+func (orb *ORB) GetPOA(poaNamePath string) (*POA, error) {
+	if poaNamePath == "" || poaNamePath == RootPOAName {
+		return orb.GetRootPOA(), nil
+	}
+
+	// Start with the root POA
+	root := orb.GetRootPOA()
+
+	// Split the path into segments and navigate
+	segments := parseNamePath(poaNamePath)
+	current := root
+
+	for i, segment := range segments {
+		// Skip the root segment if present
+		if i == 0 && segment == RootPOAName {
+			continue
+		}
+
+		// Find the child POA by name
+		child, err := current.FindPOA(segment, true)
+		if err != nil {
+			return nil, fmt.Errorf("POA not found at segment '%s' of path '%s': %w",
+				segment, poaNamePath, err)
+		}
+
+		current = child
+	}
+
+	return current, nil
+}
+
+// Helper function to parse POA name paths
+func parseNamePath(path string) []string {
+	// Implementation can be enhanced to handle escaping and other edge cases
+	// For now, a simple split by "/" will do
+	parts := make([]string, 0)
+
+	// Split on "/" and filter empty segments
+	for _, part := range strings.Split(path, "/") {
+		if part != "" {
+			parts = append(parts, part)
+		}
+	}
+
+	return parts
+}
+
+// GetPOAManager returns the POA manager with the given index
+func (orb *ORB) GetPOAManager(index int) (*POAManager, error) {
+	orb.mu.RLock()
+	defer orb.mu.RUnlock()
+
+	if index < 0 || index >= len(orb.poaManagers) {
+		return nil, fmt.Errorf("invalid POA manager index: %d", index)
+	}
+
+	return orb.poaManagers[index], nil
+}
+
+// CreatePOAManager creates a new POA manager
+func (orb *ORB) CreatePOAManager() *POAManager {
+	return orb.NewPOAManager()
 }
