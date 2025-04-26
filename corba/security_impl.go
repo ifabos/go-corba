@@ -15,6 +15,7 @@ import (
 // PrincipalImpl implements the Principal interface
 type PrincipalImpl struct {
 	name               string
+	roles              []string
 	authenticationType AuthenticationMethod
 	privileges         []Privilege
 	attributes         map[string]interface{}
@@ -33,6 +34,11 @@ func NewPrincipal(name string, authType AuthenticationMethod) *PrincipalImpl {
 // Name returns the principal name
 func (p *PrincipalImpl) Name() string {
 	return p.name
+}
+
+// Roles returns the principal roles
+func (p *PrincipalImpl) Roles() []string {
+	return p.roles
 }
 
 // AuthenticationType returns the authentication method
@@ -71,6 +77,16 @@ func (p *PrincipalImpl) SetAttribute(name string, value interface{}) {
 func (p *PrincipalImpl) GetAttribute(name string) (interface{}, bool) {
 	val, ok := p.attributes[name]
 	return val, ok
+}
+
+// IsInRole checks if the principal has a specific role
+func (p *PrincipalImpl) IsInRole(name string) bool {
+	for _, r := range p.roles {
+		if r == name {
+			return true
+		}
+	}
+	return false
 }
 
 // CredentialsImpl implements the Credentials interface

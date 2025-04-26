@@ -176,6 +176,19 @@ func (c *baseEventChannel) DisconnectSupplier(supplier EventSupplier) error {
 	return nil
 }
 
+// Destroy implements the basic channel destruction behavior
+// Concrete implementations should override this for type-specific behavior
+func (c *baseEventChannel) Destroy() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Clear the maps
+	c.consumers = make(map[string]EventConsumer)
+	c.suppliers = make(map[string]EventSupplier)
+
+	return nil
+}
+
 // pushEventChannel implements the push model event channel
 type pushEventChannel struct {
 	baseEventChannel
