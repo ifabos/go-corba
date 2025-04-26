@@ -178,7 +178,7 @@ func (s *ExportableSynchronization) ExportReference() *corba.ObjectRef {
 	return s.objRef
 }
 
-func main() {
+func TransactionExample() {
 	// Initialize the ORB
 	orb := corba.Init()
 
