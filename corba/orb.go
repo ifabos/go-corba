@@ -341,3 +341,119 @@ func (orb *ORB) ResolveTransactionService(host string, port int) (*TransactionSe
 
 	return NewTransactionServiceClient(objRef), nil
 }
+
+// ActivateEventService initializes and registers the Event Service with this ORB
+func (orb *ORB) ActivateEventService(server *Server) error {
+	orb.mu.Lock()
+	defer orb.mu.Unlock()
+
+	// Check if the Event Service is already activated
+	if eventServiceInstance != nil {
+		return fmt.Errorf("event service is already active")
+	}
+
+	// Create a new Event Service implementation
+	eventServiceInstance = NewEventServiceImpl(orb)
+
+	// Create a servant for the Event Service
+	eventServant := &EventServiceServant{
+		service: eventServiceInstance,
+	}
+
+	// Register the Event Service with the server
+	if err := server.RegisterServant(EventServiceName, eventServant); err != nil {
+		return fmt.Errorf("failed to register event service: %w", err)
+	}
+
+	return nil
+}
+
+// GetEventService returns the Event Service instance
+func (orb *ORB) GetEventService() (*EventServiceImpl, error) {
+	orb.mu.RLock()
+	defer orb.mu.RUnlock()
+
+	if eventServiceInstance == nil {
+		return nil, fmt.Errorf("event service is not active")
+	}
+
+	return eventServiceInstance, nil
+}
+
+// ResolveEventService connects to a remote Event Service
+func (orb *ORB) ResolveEventService(host string, port int) (*EventServiceClient, error) {
+	client := orb.CreateClient()
+
+	// Connect to the server
+	err := client.Connect(host, port)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to event service: %w", err)
+	}
+
+	// Get a reference to the Event Service object
+	objRef, err := client.GetObject(EventServiceName, host, port)
+	if err != nil {
+		client.Disconnect(host, port)
+		return nil, fmt.Errorf("failed to get event service reference: %w", err)
+	}
+
+	return &EventServiceClient{objectRef: objRef}, nil
+}
+
+// ActivateNotificationService initializes and registers the Notification Service with this ORB
+func (orb *ORB) ActivateNotificationService(server *Server) error {
+	orb.mu.Lock()
+	defer orb.mu.Unlock()
+
+	// Check if the Notification Service is already activated
+	if notificationServiceInstance != nil {
+		return fmt.Errorf("notification service is already active")
+	}
+
+	// Create a new Notification Service implementation
+	notificationServiceInstance = NewNotificationServiceImpl(orb)
+
+	// Create a servant for the Notification Service
+	notificationServant := &NotificationServiceServant{
+		service: notificationServiceInstance,
+	}
+
+	// Register the Notification Service with the server
+	if err := server.RegisterServant(NotificationServiceName, notificationServant); err != nil {
+		return fmt.Errorf("failed to register notification service: %w", err)
+	}
+
+	return nil
+}
+
+// GetNotificationService returns the Notification Service instance
+func (orb *ORB) GetNotificationService() (*NotificationServiceImpl, error) {
+	orb.mu.RLock()
+	defer orb.mu.RUnlock()
+
+	if notificationServiceInstance == nil {
+		return nil, fmt.Errorf("notification service is not active")
+	}
+
+	return notificationServiceInstance, nil
+}
+
+// ResolveNotificationService connects to a remote Notification Service
+func (orb *ORB) ResolveNotificationService(host string, port int) (*NotificationServiceClient, error) {
+	client := orb.CreateClient()
+
+	// Connect to the server
+	err := client.Connect(host, port)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to notification service: %w", err)
+	}
+
+	// Get a reference to the Notification Service object
+	objRef, err := client.GetObject(NotificationServiceName, host, port)
+	if err != nil {
+		client.Disconnect(host, port)
+		return nil, fmt.Errorf("failed to get notification service reference: %w", err)
+	}
+
+	return &NotificationServiceClient{objectRef: objRef}, nil
+}
