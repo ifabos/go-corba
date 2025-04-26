@@ -397,10 +397,10 @@ func (i *AuthenticationInterceptor) ReceiveRequest(info *RequestInfo) error {
 	}
 
 	// Authenticate
-	// Pass only non-sensitive data to Authenticate
 	creds, err := i.secManager.Authenticate(map[string]interface{}{
 		"method":   AuthPassword,
 		"username": username,
+		"password": password,
 	})
 
 	if err != nil {
