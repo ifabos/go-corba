@@ -360,13 +360,16 @@ func (sm *SecurityManagerImpl) Authenticate(authData interface{}) (Credentials, 
 	credentials := NewCredentials(principal, CredsInvocationCredentials, lifetime)
 
 	// Audit the authentication
+	// Exclude sensitive fields from the details map
+	auditDetails := map[string]interface{}{
+		"principal": principal.Name(),
+		"method":    method,
+	}
+
 	sm.AuditAction(
 		"Authentication",
 		true,
-		map[string]interface{}{
-			"principal": principal.Name(),
-			"method":    method,
-		},
+		auditDetails,
 	)
 
 	return credentials, nil
