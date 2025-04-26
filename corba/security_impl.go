@@ -597,7 +597,14 @@ func (l *DefaultAuditLogger) LogEvent(action string, principal string, succeeded
 		statusStr = "SUCCEEDED"
 	}
 
-	detailsJSON, _ := json.Marshal(details)
+	// Sanitize details to exclude sensitive or tainted fields
+	sanitizedDetails := make(map[string]interface{})
+	for key, value := range details {
+		if key != "method" { // Exclude the tainted "method" field
+			sanitizedDetails[key] = value
+		}
+	}
+	detailsJSON, _ := json.Marshal(sanitizedDetails)
 	log.Printf("[SECURITY AUDIT] %s by %s %s: %s", action, principal, statusStr, string(detailsJSON))
 }
 
