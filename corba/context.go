@@ -1,6 +1,7 @@
 package corba
 
 import (
+	"fmt"
 	"sync"
 )
 
@@ -85,6 +86,9 @@ type ObjectRef struct {
 	ServerHost string
 	ServerPort int
 	client     *Client
+	ior        *IOR   // Added IOR reference
+	objectKey  []byte // Added object key for proper identification
+	typeID     string // Added type ID (repository ID)
 }
 
 // Invoke calls a method on the referenced object using GIOP/IIOP
@@ -108,9 +112,98 @@ func (ref *ObjectRef) Equals(other *ObjectRef) bool {
 		return ref.IsNil() && other.IsNil()
 	}
 
+	// If both have IORs, compare them
+	if ref.ior != nil && other.ior != nil {
+		// Compare type IDs
+		if ref.ior.TypeID != other.ior.TypeID {
+			return false
+		}
+
+		// For a more thorough comparison, we would compare profiles
+		// But for simplicity, we'll just compare object keys if available
+		if ref.objectKey != nil && other.objectKey != nil {
+			if len(ref.objectKey) != len(other.objectKey) {
+				return false
+			}
+
+			for i := range ref.objectKey {
+				if ref.objectKey[i] != other.objectKey[i] {
+					return false
+				}
+			}
+
+			return true
+		}
+	}
+
+	// Fall back to comparing the basic fields
 	return ref.Name == other.Name &&
 		ref.ServerHost == other.ServerHost &&
 		ref.ServerPort == other.ServerPort
+}
+
+// GetIOR returns the IOR associated with this reference
+func (ref *ObjectRef) GetIOR() *IOR {
+	return ref.ior
+}
+
+// SetIOR sets the IOR for this reference and updates related fields
+func (ref *ObjectRef) SetIOR(ior *IOR) error {
+	if ior == nil {
+		return fmt.Errorf("cannot set nil IOR")
+	}
+
+	ref.ior = ior
+	ref.typeID = ior.TypeID
+
+	// Extract information from the primary IIOP profile
+	profile, err := ior.GetPrimaryIIOPProfile()
+	if err != nil {
+		return err
+	}
+
+	ref.ServerHost = profile.Host
+	ref.ServerPort = int(profile.Port)
+	ref.objectKey = profile.ObjectKey
+	ref.Name = ObjectKeyToString(profile.ObjectKey)
+
+	return nil
+}
+
+// GetTypeID returns the repository ID (type ID) of the object
+func (ref *ObjectRef) GetTypeID() string {
+	if ref.ior != nil {
+		return ref.ior.TypeID
+	}
+	return ref.typeID
+}
+
+// SetTypeID sets the repository ID (type ID) of the object
+func (ref *ObjectRef) SetTypeID(typeID string) {
+	ref.typeID = typeID
+	if ref.ior != nil {
+		ref.ior.TypeID = typeID
+	}
+}
+
+// ToString returns the stringified IOR representation
+func (ref *ObjectRef) ToString() (string, error) {
+	if ref.ior == nil {
+		// Create an IOR if none exists
+		ior := NewIOR(ref.GetTypeID())
+		version := IIOPVersion{Major: 1, Minor: 2} // Use IIOP 1.2
+
+		// If we don't have an object key, generate one
+		objKey := ref.objectKey
+		if len(objKey) == 0 {
+			objKey = ObjectKeyFromString(ref.Name)
+		}
+
+		ior.AddIIOPProfile(version, ref.ServerHost, uint16(ref.ServerPort), objKey)
+		ref.ior = ior
+	}
+
+	return ref.ior.ToString(), nil
 }
 
 // CORBASystemException represents a standard CORBA system exception

@@ -709,6 +709,83 @@ func generateObjectID() ObjectID {
 	return ObjectID(fmt.Sprintf("OBJ_%d", time.Now().UnixNano()))
 }
 
+// CreateReference creates an object reference with the given repository ID
+func (p *POA) CreateReference(repositoryID string, objectKey []byte) *ObjectRef {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	// Format repository ID according to CORBA standard if it's not already formatted
+	formattedID := FormatRepositoryID(repositoryID, "")
+
+	// Create a new IOR
+	ior := NewIOR(formattedID)
+
+	// Determine the object key to use
+	var keyToUse []byte
+	if len(objectKey) > 0 {
+		keyToUse = objectKey
+	} else {
+		// Generate a new object key with POA name prefix
+		keyToUse = GenerateObjectKey(p.name + "_")
+	}
+
+	// Get the server information from the ORB/Server
+	// For now, let's use a placeholder; in a real implementation this would come from configuration
+	host := "localhost"  // Default host
+	port := uint16(8000) // Default port
+
+	// Add an IIOP profile to the IOR
+	ior.AddIIOPProfile(IIOPVersion{Major: 1, Minor: 2}, host, port, keyToUse)
+
+	// Create the object reference
+	ref := &ObjectRef{
+		Name:       ObjectKeyToString(keyToUse),
+		ServerHost: host,
+		ServerPort: int(port),
+		ior:        ior,
+		objectKey:  keyToUse,
+		typeID:     formattedID,
+	}
+
+	// Set a client reference - would typically be done when the client resolves the reference
+	ref.client = p.orb.CreateClient()
+
+	return ref
+}
+
+// CreateReferenceWithId creates an object reference with a specific object ID
+func (p *POA) CreateReferenceWithId(id ObjectID, repositoryID string) *ObjectRef {
+	return p.CreateReference(repositoryID, id)
+}
+
+// ServantToReference creates an object reference for a servant
+func (p *POA) ServantToReference(servant interface{}) (*ObjectRef, error) {
+	// First, try to get the object ID for the servant
+	objectID, err := p.ServantToID(servant)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get the repository ID for the servant type
+	repositoryID := ""
+
+	// Try to get it from Interface Repository if available
+	if p.orb.interfaceRepository != nil {
+		id, err := p.orb.interfaceRepository.GetRepositoryID(servant)
+		if err == nil {
+			repositoryID = id
+		}
+	}
+
+	// If still empty, generate a default one based on the type
+	if repositoryID == "" {
+		repositoryID = FormatRepositoryID(fmt.Sprintf("%T", servant), "1.0")
+	}
+
+	// Create the reference
+	return p.CreateReferenceWithId(objectID, repositoryID), nil
+}
+
 // POAManager states
 const (
 	POAManagerHolding    = 0

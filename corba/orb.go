@@ -159,29 +159,82 @@ func (orb *ORB) CreateRequest(target *ObjectRef, operation string) *Request {
 
 // ObjectToReference converts an object to an ObjectRef
 func (orb *ORB) ObjectToReference(obj interface{}) (*ObjectRef, error) {
-	// This is a simplified implementation for the current architecture
-	// In a full CORBA implementation, this would create a proper IOR
-
-	// For now, we'll handle only ObjectRef objects
+	// Handle the case where the object is already an ObjectRef
 	if objRef, ok := obj.(*ObjectRef); ok {
 		return objRef, nil
 	}
 
-	return nil, fmt.Errorf("cannot convert object to reference: unsupported type %T", obj)
+	// Try to get repository ID from the interface repository
+	var repoID string
+	var err error
+
+	if orb.interfaceRepository != nil {
+		repoID, err = orb.interfaceRepository.GetRepositoryID(obj)
+		if err != nil {
+			// If not found, generate a default one based on the type
+			repoID = FormatRepositoryID(fmt.Sprintf("%T", obj), "1.0")
+		}
+	} else {
+		// Generate a default repository ID based on the type
+		repoID = FormatRepositoryID(fmt.Sprintf("%T", obj), "1.0")
+	}
+
+	// Create a new object reference
+	objRef := &ObjectRef{
+		typeID: repoID,
+		// Generate object key
+		objectKey: GenerateObjectKey(""),
+		Name:      fmt.Sprintf("object_%d", GetNextObjectID()),
+	}
+
+	// Register the object with the ORB
+	err = orb.RegisterObject(objRef.Name, obj)
+	if err != nil {
+		return nil, fmt.Errorf("failed to register object: %w", err)
+	}
+
+	return objRef, nil
 }
 
 // StringToObject converts a stringified object reference (IOR) to an ObjectRef
-func (orb *ORB) StringToObject(ior string) (*ObjectRef, error) {
-	// In a full implementation, this would parse an IOR string
-	// For now, we'll just return an error as this isn't implemented yet
-	return nil, fmt.Errorf("StringToObject not implemented")
+func (orb *ORB) StringToObject(iorString string) (*ObjectRef, error) {
+	// Parse the IOR string
+	ior, err := ParseIOR(iorString)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse IOR string: %w", err)
+	}
+
+	// Create a new ObjectRef
+	objRef := &ObjectRef{
+		ior:    ior,
+		typeID: ior.TypeID,
+	}
+
+	// Extract primary profile information
+	profile, err := ior.GetPrimaryIIOPProfile()
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract IIOP profile: %w", err)
+	}
+
+	// Set the ObjectRef fields
+	objRef.ServerHost = profile.Host
+	objRef.ServerPort = int(profile.Port)
+	objRef.objectKey = profile.ObjectKey
+	objRef.Name = ObjectKeyToString(profile.ObjectKey)
+
+	// Set up the client
+	objRef.client = orb.CreateClient()
+
+	return objRef, nil
 }
 
 // ObjectToString converts an ObjectRef to a stringified object reference (IOR)
 func (orb *ORB) ObjectToString(objRef *ObjectRef) (string, error) {
-	// In a full implementation, this would generate an IOR string
-	// For now, we'll just return an error as this isn't implemented yet
-	return "", fmt.Errorf("ObjectToString not implemented")
+	if objRef == nil {
+		return "", fmt.Errorf("cannot convert nil object reference to string")
+	}
+
+	return objRef.ToString()
 }
 
 // ActivateInterfaceRepository initializes and registers the Interface Repository with this ORB
