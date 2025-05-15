@@ -1,0 +1,29 @@
+// service.idl - 演示循环引用检测
+
+// 包含 common.idl (common.idl 已经包含了 types.idl)
+#include "common.idl"
+
+// 尝试再次包含 types.idl - 应该被忽略，因为已经被 common.idl 包含
+#include "types.idl"
+
+#pragma prefix "org.corba.examples"
+
+module Service {
+    // 使用 common.idl 和 types.idl 中的类型
+    typedef BasicTypes::Data ServiceData;
+    typedef Common::Status ServiceStatus;
+    
+    // 服务接口，继承自 Common::Base
+    interface ServiceManager : Common::Base {
+        // 使用从 common.idl 导入的类型
+        Common::Result executeService(
+            in string serviceName, 
+            in ServiceData data, 
+            in Common::Options options
+        ) raises (BasicTypes::RuntimeError, Common::InvalidArgument);
+        
+        // 监控方法
+        readonly attribute long activeServices;
+        void listServices(out sequence<string> serviceNames);
+    };
+};

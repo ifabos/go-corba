@@ -48,10 +48,26 @@ func main() {
 	// Parse the IDL file
 	parser := idl.NewParser()
 
+	// Set up include path list
+	var includePathList []string
+	if *includeDirs != "" {
+		includePathList = strings.Split(*includeDirs, ",")
+	}
+
+	// Add the directory of the input file to the include path
+	inputDir := filepath.Dir(*inputFile)
+	includePathList = append([]string{inputDir}, includePathList...)
+
+	// Set the include directories in the parser
+	parser.SetIncludeDirs(includePathList)
+
+	// Set the current file being processed
+	parser.SetCurrentFile(*inputFile)
+
 	// Set up include handler
-	includePathList := strings.Split(*includeDirs, ",")
 	parser.SetIncludeHandler(func(path string) (io.Reader, error) {
-		// Try to find the file in include directories
+		// This handler will be called when an #include directive is encountered
+		// But most of the include resolution logic is now in the parser itself
 		for _, dir := range includePathList {
 			if dir == "" {
 				continue
@@ -64,7 +80,7 @@ func main() {
 			}
 		}
 
-		// Try to open the file directly
+		// Try to open the file directly as a last resort
 		return os.Open(path)
 	})
 
@@ -113,8 +129,18 @@ func showHelp() {
 	fmt.Println("Options:")
 	flag.PrintDefaults()
 	fmt.Println("")
-	fmt.Println("Example:")
-	fmt.Println("  idlgen -i myservice.idl -o ./generated -package myservice")
+	fmt.Println("Include Handling:")
+	fmt.Println("  The IDL compiler supports both system includes (#include <file.idl>) and")
+	fmt.Println("  user includes (#include \"file.idl\"). System includes are searched in the")
+	fmt.Println("  include path specified with -I. User includes are first searched relative")
+	fmt.Println("  to the including file, then in the include path.")
+	fmt.Println("")
+	fmt.Println("Examples:")
+	fmt.Println("  Basic usage:")
+	fmt.Println("    idlgen -i myservice.idl -o ./generated -package myservice")
+	fmt.Println("")
+	fmt.Println("  With include directories:")
+	fmt.Println("    idlgen -i myservice.idl -I /path/to/includes,/another/path -o ./generated")
 }
 
 func showVersion() {

@@ -1,12 +1,20 @@
 // Calculator service IDL
+#include "common.idl"
+
+#pragma prefix "org.corba.examples"
+
 module Calculator {
+    // 引用 common.idl 中的定义
+    typedef Common::Status CalculatorStatus;
+    
     // Exception for division by zero
     exception DivByZeroException {
         string message;
     };
     
-    // Calculator interface
-    interface Calc {
+    // 使用 Repository ID pragma
+    #pragma ID Calculator::Calc "IDL:org.corba.examples/Calculator/Calc:1.0"
+    interface Calc : Common::Base {
         // Basic arithmetic operations
         double add(in double a, in double b);
         double subtract(in double a, in double b);
@@ -20,5 +28,11 @@ module Calculator {
         
         // Read-only attribute for tracking operation count
         readonly attribute long operationCount;
+        
+        // 使用通用结构的操作
+        Common::Result performOperation(in string operation, in double a, in double b);
+        
+        // 批处理操作
+        sequence<double> batchProcess(in sequence<double> numbers, in Common::Options options);
     };
 };

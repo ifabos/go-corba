@@ -1,0 +1,16 @@
+// circular_a.idl - 用于测试循环引用检测
+
+#pragma prefix "org.corba.examples"
+
+module CircularA {
+    interface A;  // 前向声明
+    
+    // 包含 circular_b.idl，它会尝试再包含 circular_a.idl
+    #include "circular_b.idl"
+    
+    // 完整定义
+    interface A {
+        CircularB::B getB();
+        string getName();
+    };
+};

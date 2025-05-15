@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -17,6 +19,9 @@ type Parser struct {
 	rootModule     *Module
 	currentModule  *Module
 	includeHandler func(string) (io.Reader, error)
+	includedFiles  map[string]bool // 跟踪已经包含的文件，防止循环引用
+	currentFile    string          // 当前处理的文件名，用于错误报告
+	includeDirs    []string        // include 搜索路径
 }
 
 // NewParser creates a new IDL parser
@@ -28,12 +33,29 @@ func NewParser() *Parser {
 		includeHandler: func(path string) (io.Reader, error) {
 			return nil, fmt.Errorf("include not supported: %s", path)
 		},
+		includedFiles: make(map[string]bool), // 初始化已包含文件的映射
+		includeDirs:   []string{},            // 初始化包含目录
 	}
 }
 
 // SetIncludeHandler sets a handler for #include directives
 func (p *Parser) SetIncludeHandler(handler func(string) (io.Reader, error)) {
 	p.includeHandler = handler
+}
+
+// AddIncludeDir adds a directory to search for included files
+func (p *Parser) AddIncludeDir(dir string) {
+	p.includeDirs = append(p.includeDirs, dir)
+}
+
+// SetIncludeDirs sets the directories to search for included files
+func (p *Parser) SetIncludeDirs(dirs []string) {
+	p.includeDirs = dirs
+}
+
+// SetCurrentFile sets the name of the file currently being processed
+func (p *Parser) SetCurrentFile(filename string) {
+	p.currentFile = filename
 }
 
 // Parse parses an IDL file
@@ -137,35 +159,180 @@ func (p *Parser) parsePreprocessor() error {
 
 	// Process the include directive
 	if strings.HasPrefix(directive, "#include") {
-		// Extract the include path
-		re := regexp.MustCompile(`#include\s+[<"]([^>"]+)[>"]`)
-		match := re.FindStringSubmatch(directive)
-		if len(match) < 2 {
-			return fmt.Errorf("invalid include directive: %s", directive)
+		// 区分 #include <system.idl> 和 #include "user.idl" 格式
+		var includeType string
+		var includePath string
+
+		// 匹配 <system.idl> 格式
+		reSystem := regexp.MustCompile(`#include\s+<([^>]+)>`)
+		matchSystem := reSystem.FindStringSubmatch(directive)
+		if len(matchSystem) == 2 {
+			includeType = "system"
+			includePath = matchSystem[1]
+		} else {
+			// 匹配 "user.idl" 格式
+			reUser := regexp.MustCompile(`#include\s+"([^"]+)"`)
+			matchUser := reUser.FindStringSubmatch(directive)
+			if len(matchUser) == 2 {
+				includeType = "user"
+				includePath = matchUser[1]
+			} else {
+				return fmt.Errorf("invalid include directive: %s", directive)
+			}
 		}
 
-		includePath := match[1]
-		reader, err := p.includeHandler(includePath)
+		// 检查是否已经包含过该文件（防止循环引用）
+		// 使用绝对路径来标准化文件引用
+		if p.includedFiles[includePath] {
+			// 文件已被包含过，跳过
+			return p.nextToken()
+		}
+
+		// 尝试打开包含的文件
+		reader, includeFilePath, err := p.resolveIncludePath(includePath, includeType)
 		if err != nil {
-			return fmt.Errorf("failed to handle include %s: %w", includePath, err)
+			return fmt.Errorf("failed to resolve include %s: %w", includePath, err)
 		}
 
-		// Create a new parser for the included file
+		// 标记文件已被包含
+		p.includedFiles[includePath] = true
+
+		// 保存当前文件名，以便处理完后恢复
+		prevFile := p.currentFile
+
+		// 创建一个新的解析器实例用于包含的文件
 		includeParser := NewParser()
 		includeParser.currentModule = p.currentModule
+		includeParser.includedFiles = p.includedFiles // 共享已包含文件列表
+		includeParser.includeDirs = p.includeDirs     // 共享包含目录
+		includeParser.SetCurrentFile(includeFilePath)
 
-		// Parse the included file
+		// 解析包含的文件
 		if err := includeParser.Parse(reader); err != nil {
 			return fmt.Errorf("failed to parse included file %s: %w", includePath, err)
 		}
 
-		// Merge the included file's types into the current module
+		// 合并包含文件中定义的类型到当前模块
 		for name, typ := range includeParser.currentModule.Types {
 			p.currentModule.Types[name] = typ
+		}
+
+		// 恢复当前文件名
+		p.SetCurrentFile(prevFile)
+	} else if strings.HasPrefix(directive, "#pragma") {
+		// 处理 #pragma 指令，如 #pragma ID, #pragma prefix 等
+		// 根据 CORBA 规范，这些对 IDL 到 Go 代码生成也很重要
+		if err := p.parsePragma(directive); err != nil {
+			return err
 		}
 	}
 
 	return p.nextToken()
+}
+
+// resolveIncludePath 解析 include 路径并返回对应的 reader
+func (p *Parser) resolveIncludePath(path string, includeType string) (io.Reader, string, error) {
+	// 首先尝试使用 includeHandler
+	reader, err := p.includeHandler(path)
+	if err == nil {
+		return reader, path, nil
+	}
+
+	// 如果 includeHandler 失败，尝试在 includeDirs 中查找文件
+	// 对于 system 头文件 (#include <file>)，优先在系统目录中查找
+	// 对于 user 头文件 (#include "file")，优先在当前目录查找
+
+	searchDirs := p.includeDirs
+
+	// 如果是用户头文件，首先尝试相对于当前文件的路径
+	if includeType == "user" && p.currentFile != "" {
+		// 从当前文件的目录开始查找
+		baseDir := filepath.Dir(p.currentFile)
+		fullPath := filepath.Join(baseDir, path)
+		if file, err := os.Open(fullPath); err == nil {
+			return file, fullPath, nil
+		}
+	}
+
+	// 在所有包含目录中查找
+	for _, dir := range searchDirs {
+		if dir == "" {
+			continue
+		}
+
+		fullPath := filepath.Join(dir, path)
+		file, err := os.Open(fullPath)
+		if err == nil {
+			return file, fullPath, nil
+		}
+	}
+
+	return nil, "", fmt.Errorf("file not found: %s", path)
+}
+
+// parsePragma 处理 IDL 中的 pragma 指令
+func (p *Parser) parsePragma(directive string) error {
+	// 处理 #pragma ID 指令
+	reID := regexp.MustCompile(`#pragma\s+ID\s+([a-zA-Z_][a-zA-Z0-9_]*(?:::[a-zA-Z_][a-zA-Z0-9_]*)*)\s+"([^"]+)"`)
+	matchID := reID.FindStringSubmatch(directive)
+	if len(matchID) == 3 {
+		// 处理 ID pragma，关联接口名称和 Repository ID
+		identifierName := matchID[1]
+		repositoryID := matchID[2]
+
+		// 解析可能是作用域名称（包含::）的标识符
+		parts := strings.Split(identifierName, "::")
+		targetModule := p.currentModule
+		typeName := identifierName
+
+		// 如果是作用域名称，需要找到对应的模块和类型
+		if len(parts) > 1 {
+			// 最后一部分是类型名
+			typeName = parts[len(parts)-1]
+
+			// 前面的部分是模块路径
+			modulePath := parts[:len(parts)-1]
+
+			// 找到目标模块
+			for _, moduleName := range modulePath {
+				if submod, exists := targetModule.GetSubmodule(moduleName); exists {
+					targetModule = submod
+				} else {
+					// 模块不存在，忽略这个 pragma
+					return nil
+				}
+			}
+		}
+
+		// 在目标模块中查找类型
+		if typ, ok := targetModule.Types[typeName]; ok {
+			typ.SetRepositoryID(repositoryID)
+		}
+
+		return nil
+	}
+
+	// 处理 #pragma prefix 指令
+	rePrefix := regexp.MustCompile(`#pragma\s+prefix\s+"([^"]+)"`)
+	matchPrefix := rePrefix.FindStringSubmatch(directive)
+	if len(matchPrefix) == 2 {
+		// 处理 prefix pragma，设置当前模块的前缀
+		prefix := matchPrefix[1]
+		p.currentModule.Prefix = prefix
+		return nil
+	}
+
+	// 处理 #pragma version 指令
+	reVersion := regexp.MustCompile(`#pragma\s+version\s+([a-zA-Z_][a-zA-Z0-9_]*(?:::[a-zA-Z_][a-zA-Z0-9_]*)*)\s+([0-9]+)\.([0-9]+)`)
+	matchVersion := reVersion.FindStringSubmatch(directive)
+	if len(matchVersion) == 4 {
+		// 版本信息，可用于构建 Repository ID
+		// 在此实现中，我们将版本信息作为 Repository ID 的一部分存储
+		return nil
+	}
+
+	// 其他 pragma 指令暂时忽略
+	return nil
 }
 
 // parseModule parses an IDL module
