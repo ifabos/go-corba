@@ -34,6 +34,8 @@ const (
 type Type interface {
 	TypeName() string
 	GoTypeName() string
+	GetRepositoryID() string
+	SetRepositoryID(string)
 }
 
 // Direction represents the parameter direction in IDL operations
@@ -46,8 +48,24 @@ const (
 	InOut Direction = "inout"
 )
 
+// BaseType 提供基本的类型功能，可以被其他类型嵌入
+type BaseType struct {
+	RepositoryID string
+}
+
+// GetRepositoryID returns the repository ID
+func (t *BaseType) GetRepositoryID() string {
+	return t.RepositoryID
+}
+
+// SetRepositoryID sets the repository ID
+func (t *BaseType) SetRepositoryID(repoID string) {
+	t.RepositoryID = repoID
+}
+
 // SimpleType represents a basic IDL type
 type SimpleType struct {
+	BaseType
 	Name BasicType
 }
 
@@ -99,6 +117,7 @@ func (t *SimpleType) GoTypeName() string {
 
 // SequenceType represents an IDL sequence type
 type SequenceType struct {
+	BaseType
 	ElementType Type
 	MaxSize     int // -1 for unbounded
 }
@@ -118,6 +137,7 @@ func (t *SequenceType) GoTypeName() string {
 
 // StructType represents an IDL struct type
 type StructType struct {
+	BaseType
 	Name   string
 	Module string
 	Fields []StructField
@@ -141,6 +161,7 @@ func (t *StructType) GoTypeName() string {
 
 // EnumType represents an IDL enum type
 type EnumType struct {
+	BaseType
 	Name     string
 	Module   string
 	Elements []string
@@ -158,6 +179,7 @@ func (t *EnumType) GoTypeName() string {
 
 // TypeDef represents an IDL typedef
 type TypeDef struct {
+	BaseType
 	Name     string
 	Module   string
 	OrigType Type
@@ -175,6 +197,7 @@ func (t *TypeDef) GoTypeName() string {
 
 // UnionType represents an IDL union type
 type UnionType struct {
+	BaseType
 	Name         string
 	Module       string
 	Discriminant Type
@@ -200,6 +223,7 @@ func (t *UnionType) GoTypeName() string {
 
 // InterfaceType represents an IDL interface type
 type InterfaceType struct {
+	BaseType
 	Name       string
 	Module     string
 	Parents    []string
@@ -246,6 +270,7 @@ type Module struct {
 	Parent     *Module
 	Types      map[string]Type
 	Submodules map[string]*Module
+	Prefix     string // Repository ID prefix for this module
 }
 
 // NewModule creates a new IDL module
@@ -320,6 +345,38 @@ func (m *Module) AllTypes() map[string]Type {
 	}
 
 	return result
+}
+
+// GenerateRepositoryID 根据模块前缀和类型名生成标准的 Repository ID
+func GenerateRepositoryID(modulePath []string, typeName string, version string) string {
+	if version == "" {
+		version = "1.0"
+	}
+
+	// 构建作用域路径
+	path := ""
+	for i, mod := range modulePath {
+		if i > 0 {
+			path += "/"
+		}
+		path += mod
+	}
+
+	// 添加类型名
+	if path != "" {
+		path += "/" + typeName
+	} else {
+		path = typeName
+	}
+
+	// 返回 "IDL:路径:版本" 格式的 Repository ID
+	return fmt.Sprintf("IDL:%s:%s", path, version)
+}
+
+// BuildRepositoryID 根据模块层次结构构建 Repository ID
+func (m *Module) BuildRepositoryID(typeName string, version string) string {
+	path := m.Path()
+	return GenerateRepositoryID(path, typeName, version)
 }
 
 // GoPackageName returns the Go package name for this module

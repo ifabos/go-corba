@@ -1,0 +1,23 @@
+// types.idl - 基本类型定义
+#pragma prefix "org.corba.examples"
+
+module BasicTypes {
+    // 这个文件定义了最基本的类型
+
+    // 基本类型别名
+    typedef long ID;
+    typedef string Name;
+    typedef sequence<octet> Data;
+    
+    // 基本异常
+    exception RuntimeError {
+        string reason;
+        long errorCode;
+    };
+
+    // 通用标识接口
+    interface Identifiable {
+        readonly attribute ID id;
+        readonly attribute Name name;
+    };
+};

@@ -48,6 +48,35 @@ func main() {
 }
 ```
 
+## IDL Compiler
+
+The Go-CORBA SDK includes an IDL compiler (`idlgen`) that translates CORBA IDL files to Go code.
+
+### IDL Include Support
+
+The IDL compiler fully supports the CORBA standard `#include` directive:
+
+- System includes: `#include <file.idl>`
+- User includes: `#include "file.idl"`
+
+Include resolution follows the standard CORBA rules:
+- User includes (`"file.idl"`) are first searched relative to the including file, then in the include path
+- System includes (`<file.idl>`) are searched in the include path
+
+```bash
+# Example usage with include paths
+idlgen -i myservice.idl -I /path/to/includes,/another/path -o ./generated
+```
+
+### Other IDL Features
+
+The IDL compiler also supports:
+
+- Repository IDs with `#pragma ID` directive
+- Module prefixes with `#pragma prefix` directive
+- Circular references detection and resolution
+- Nested includes
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

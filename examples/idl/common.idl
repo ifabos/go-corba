@@ -1,0 +1,48 @@
+// common.idl - 通用定义，被其他 IDL 文件包含
+
+// 包含基本类型定义
+#include "types.idl"
+
+#pragma prefix "org.corba.examples"
+
+module Common {
+    // 从 types.idl 中导入类型
+    typedef BasicTypes::ID CommonID;
+    
+    // 基本的异常类型
+    exception InvalidArgument {
+        string reason;
+    };
+    
+    // 通用的状态枚举
+    enum Status {
+        OK,
+        ERROR,
+        PENDING
+    };
+    
+    // 通用的结果结构
+    struct Result {
+        Status status;
+        string message;
+    };
+    
+    // 通用的传输选项
+    struct Options {
+        boolean secure;
+        long timeout;
+        CommonID optionID;
+    };
+    
+    // 定义一个简单的接口，继承自 BasicTypes::Identifiable
+    interface Base : BasicTypes::Identifiable {
+        // 获取当前状态
+        Status getStatus();
+        
+        // 检查是否准备好
+        boolean isReady();
+        
+        // 通用的关闭操作
+        void shutdown();
+    };
+};
