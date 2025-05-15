@@ -1,0 +1,13 @@
+module test {
+  // 这是一个错误的内联结构体，缺少闭合大括号
+  typedef struct {
+    string address;
+    long zipcode;
+  // 这里缺少了闭合大括号 } 
+  Address;
+
+  // 使用内联结构体
+  interface ContactInfo {
+    Address getAddress();
+  };
+};

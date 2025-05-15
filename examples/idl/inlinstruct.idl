@@ -1,0 +1,19 @@
+module test {
+  // 常规结构体定义
+  struct Person {
+    string name;
+    long age;
+  };
+
+  // 内联结构体 typedef
+  typedef struct {
+    string address;
+    long zipcode;
+  } Address;
+
+  // 使用内联结构体和普通结构体
+  interface ContactInfo {
+    Person getPerson();
+    Address getAddress();
+  };
+};

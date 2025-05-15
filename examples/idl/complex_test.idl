@@ -1,0 +1,29 @@
+module complex_test {
+  // 嵌套模块
+  module inner {
+    // 常规结构体
+    struct RegularStruct {
+      string field1;
+      long field2;
+    };
+    
+    // 内联结构体typedef
+    typedef struct {
+      float x;
+      float y;
+      float z;
+    } Point3D;
+    
+    // 使用内联结构体作为字段的结构体
+    struct Mesh {
+      string name;
+      sequence<Point3D> vertices;
+    };
+  };
+  
+  // 使用嵌套模块中定义的类型
+  interface Graphics {
+    inner::Mesh createMesh(in string name);
+    void addVertex(in inner::Mesh mesh, in inner::Point3D vertex);
+  };
+};

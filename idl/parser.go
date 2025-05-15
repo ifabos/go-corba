@@ -2,7 +2,6 @@ package idl
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -60,7 +59,11 @@ func (p *Parser) SetCurrentFile(filename string) {
 
 // Parse parses an IDL file
 func (p *Parser) Parse(reader io.Reader) error {
-	p.lexer = newLexer(reader)
+	filename := p.currentFile
+	if filename == "" {
+		filename = "<input>"
+	}
+	p.lexer = newLexer(reader, filename)
 
 	// Get the first token
 	if err := p.nextToken(); err != nil {
@@ -85,6 +88,15 @@ func (l *lexer) readChar() {
 			l.eof = true
 		}
 		l.current = 0
+		return
+	}
+
+	// 更新行号和列号
+	if l.current == '\n' {
+		l.line++
+		l.column = 0
+	} else {
+		l.column++
 	}
 }
 
@@ -92,7 +104,10 @@ func (l *lexer) readChar() {
 func (p *Parser) nextToken() error {
 	var err error
 	p.currentToken, err = p.lexer.nextToken()
-	return err
+	if err != nil {
+		return fmt.Errorf("%s:%d:%d: %v", p.lexer.filename, p.lexer.lastLine, p.lexer.lastCol, err)
+	}
+	return nil
 }
 
 // parseIDLFile parses an entire IDL file
@@ -146,7 +161,8 @@ func (p *Parser) parseIDLFile() error {
 				return err
 			}
 		default:
-			return fmt.Errorf("unexpected token: %s", p.currentToken.value)
+			return fmt.Errorf("%s:%d:%d: unexpected token: %s",
+				p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 		}
 	}
 
@@ -344,7 +360,8 @@ func (p *Parser) parseModule() error {
 
 	// Get module name
 	if p.currentToken.typ != tokenIdentifier {
-		return fmt.Errorf("expected module name, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected module name, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	moduleName := p.currentToken.value
@@ -369,7 +386,8 @@ func (p *Parser) parseModule() error {
 
 	// Expect opening brace
 	if p.currentToken.typ != tokenOpenBrace {
-		return fmt.Errorf("expected '{' after module name, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected '{' after module name, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	// Skip the opening brace
@@ -414,7 +432,8 @@ func (p *Parser) parseModule() error {
 				return err
 			}
 		default:
-			return fmt.Errorf("unexpected token in module: %s", p.currentToken.value)
+			return fmt.Errorf("%s:%d:%d: unexpected token in module: %s",
+				p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 		}
 	}
 
@@ -425,7 +444,8 @@ func (p *Parser) parseModule() error {
 
 	// Expect semicolon
 	if p.currentToken.typ != tokenSemicolon {
-		return fmt.Errorf("expected ';' after module definition, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected ';' after module definition, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	// Skip the semicolon
@@ -591,7 +611,8 @@ func (p *Parser) parseInterface() error {
 
 		// Parse operation name
 		if p.currentToken.typ != tokenIdentifier {
-			return fmt.Errorf("expected operation name, got %s", p.currentToken.value)
+			return fmt.Errorf("%s:%d:%d: expected operation name, got %s",
+				p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 		}
 
 		operationName := p.currentToken.value
@@ -895,10 +916,12 @@ func (p *Parser) parseType() (Type, error) {
 		return &SimpleType{Name: TypeLongLong}, nil
 	}
 
-	// For other types, look them up in the current module or parent modules
-	// This would require a more complex implementation to handle scoping correctly
+	// 处理作用域名称，例如 A::B::C
+	if strings.Contains(typeName, "::") {
+		return &ScopedType{Name: typeName}, nil
+	}
 
-	// For now, just return as a simple type
+	// 对于其他类型，以简单类型返回
 	return &SimpleType{Name: BasicType(typeName)}, nil
 }
 
@@ -1093,7 +1116,13 @@ func (p *Parser) parseTypedef() error {
 		return err
 	}
 
-	// Parse original type
+	// 检查是否是内联结构体定义
+	if p.currentToken.value == "struct" {
+		// 处理内联结构体定义
+		return p.parseInlineStructTypedef()
+	}
+
+	// 处理常规类型定义
 	origType, err := p.parseType()
 	if err != nil {
 		return err
@@ -1101,7 +1130,7 @@ func (p *Parser) parseTypedef() error {
 
 	// Get new type name
 	if p.currentToken.typ != tokenIdentifier {
-		return fmt.Errorf("expected typedef name, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected typedef name, got %s", p.lexer.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	typeName := p.currentToken.value
@@ -1120,7 +1149,7 @@ func (p *Parser) parseTypedef() error {
 
 	// Expect semicolon
 	if p.currentToken.typ != tokenSemicolon {
-		return fmt.Errorf("expected ';' after typedef, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected ';' after typedef, got %s", p.lexer.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	// Skip the semicolon
@@ -1130,6 +1159,103 @@ func (p *Parser) parseTypedef() error {
 
 	// Add typedef to current module
 	p.currentModule.AddType(typeName, typeDef)
+
+	return nil
+}
+
+// parseInlineStructTypedef 解析内联结构体定义，如 typedef struct {...} Name;
+func (p *Parser) parseInlineStructTypedef() error {
+	// 已经跳过了 "typedef" 和 "struct" 标记
+	if err := p.nextToken(); err != nil {
+		return err
+	}
+
+	// 创建无名结构体
+	structType := &StructType{
+		Name:   "", // 暂时为空，稍后设置
+		Module: p.currentModule.Name,
+		Fields: []StructField{},
+	}
+
+	// 期望左大括号
+	if p.currentToken.typ != tokenOpenBrace {
+		return fmt.Errorf("%s:%d:%d: expected '{' after 'struct', got %s", p.lexer.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
+	}
+
+	// 跳过左大括号
+	if err := p.nextToken(); err != nil {
+		return err
+	}
+
+	// 解析结构体字段
+	for p.currentToken.typ != tokenCloseBrace {
+		// 解析字段类型
+		fieldType, err := p.parseType()
+		if err != nil {
+			return err
+		}
+
+		// 解析字段名
+		if p.currentToken.typ != tokenIdentifier {
+			return fmt.Errorf("%s:%d:%d: expected field name, got %s", p.lexer.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
+		}
+
+		fieldName := p.currentToken.value
+
+		// 跳过字段名
+		if err := p.nextToken(); err != nil {
+			return err
+		}
+
+		// 添加字段到结构体
+		structType.Fields = append(structType.Fields, StructField{
+			Name: fieldName,
+			Type: fieldType,
+		})
+
+		// 期望分号
+		if p.currentToken.typ != tokenSemicolon {
+			return fmt.Errorf("%s:%d:%d: expected ';' after field definition, got %s", p.lexer.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
+		}
+
+		// 跳过分号
+		if err := p.nextToken(); err != nil {
+			return err
+		}
+	}
+
+	// 跳过右大括号
+	if err := p.nextToken(); err != nil {
+		return err
+	}
+
+	// 获取typedef名称
+	if p.currentToken.typ != tokenIdentifier {
+		return fmt.Errorf("%s:%d:%d: expected typedef name, got %s", p.lexer.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
+	}
+
+	typeName := p.currentToken.value
+
+	// 设置结构体名称为typedef名称
+	structType.Name = typeName
+
+	// 跳过typedef名称
+	if err := p.nextToken(); err != nil {
+		return err
+	}
+
+	// 期望分号
+	if p.currentToken.typ != tokenSemicolon {
+		return fmt.Errorf("%s:%d:%d: expected ';' after typedef struct definition, got %s", p.lexer.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
+	}
+
+	// 跳过分号
+	if err := p.nextToken(); err != nil {
+		return err
+	}
+
+	// 添加结构体类型到当前模块
+	p.currentModule.AddType(typeName, structType)
 
 	return nil
 }
@@ -1443,21 +1569,34 @@ const (
 
 // Token represents a lexical token
 type token struct {
-	typ   tokenType
-	value string
+	typ      tokenType
+	value    string
+	line     int    // 标记的起始行号
+	column   int    // 标记的起始列号
+	filename string // 标记所在的文件名
 }
 
 // Lexer performs lexical analysis of IDL files
 type lexer struct {
-	reader  *bufio.Reader
-	current rune
-	eof     bool
+	reader   *bufio.Reader
+	current  rune
+	eof      bool
+	line     int    // 当前行号
+	column   int    // 当前列号
+	lastLine int    // 上一个标记的行号
+	lastCol  int    // 上一个标记的列号
+	filename string // 当前处理的文件名
 }
 
 // newLexer creates a new lexer
-func newLexer(r io.Reader) *lexer {
+func newLexer(r io.Reader, filename string) *lexer {
 	lex := &lexer{
-		reader: bufio.NewReader(r),
+		reader:   bufio.NewReader(r),
+		line:     1, // 行号从1开始
+		column:   0, // 列号从0开始
+		lastLine: 1,
+		lastCol:  0,
+		filename: filename,
 	}
 	lex.readChar()
 	return lex
@@ -1513,38 +1652,48 @@ func (l *lexer) nextToken() (*token, error) {
 	}
 
 	if l.eof {
-		return &token{typ: tokenEOF, value: ""}, nil
+		return &token{
+			typ:      tokenEOF,
+			value:    "",
+			line:     l.line,
+			column:   l.column,
+			filename: l.filename,
+		}, nil
 	}
+
+	// 保存标记的起始位置
+	l.lastLine = l.line
+	l.lastCol = l.column
 
 	// Process token
 	switch {
 	case l.current == '{':
 		l.readChar()
-		return &token{typ: tokenOpenBrace, value: "{"}, nil
+		return &token{typ: tokenOpenBrace, value: "{", line: l.lastLine, column: l.lastCol, filename: l.filename}, nil
 	case l.current == '}':
 		l.readChar()
-		return &token{typ: tokenCloseBrace, value: "}"}, nil
+		return &token{typ: tokenCloseBrace, value: "}", line: l.lastLine, column: l.lastCol, filename: l.filename}, nil
 	case l.current == '(':
 		l.readChar()
-		return &token{typ: tokenOpenParen, value: "("}, nil
+		return &token{typ: tokenOpenParen, value: "(", line: l.lastLine, column: l.lastCol, filename: l.filename}, nil
 	case l.current == ')':
 		l.readChar()
-		return &token{typ: tokenCloseParen, value: ")"}, nil
+		return &token{typ: tokenCloseParen, value: ")", line: l.lastLine, column: l.lastCol, filename: l.filename}, nil
 	case l.current == '[':
 		l.readChar()
-		return &token{typ: tokenOpenBracket, value: "["}, nil
+		return &token{typ: tokenOpenBracket, value: "[", line: l.lastLine, column: l.lastCol, filename: l.filename}, nil
 	case l.current == ']':
 		l.readChar()
-		return &token{typ: tokenCloseBracket, value: "]"}, nil
+		return &token{typ: tokenCloseBracket, value: "]", line: l.lastLine, column: l.lastCol, filename: l.filename}, nil
 	case l.current == ';':
 		l.readChar()
-		return &token{typ: tokenSemicolon, value: ";"}, nil
+		return &token{typ: tokenSemicolon, value: ";", line: l.lastLine, column: l.lastCol, filename: l.filename}, nil
 	case l.current == ':':
 		l.readChar()
-		return &token{typ: tokenColon, value: ":"}, nil
+		return &token{typ: tokenColon, value: ":", line: l.lastLine, column: l.lastCol, filename: l.filename}, nil
 	case l.current == ',':
 		l.readChar()
-		return &token{typ: tokenComma, value: ","}, nil
+		return &token{typ: tokenComma, value: ",", line: l.lastLine, column: l.lastCol, filename: l.filename}, nil
 	case l.current == '#':
 		// Preprocessor directive
 		return l.readPreprocessor()
@@ -1580,7 +1729,13 @@ func (l *lexer) readPreprocessor() (*token, error) {
 		l.readChar()
 	}
 
-	return &token{typ: tokenPreprocessor, value: directive.String()}, nil
+	return &token{
+		typ:      tokenPreprocessor,
+		value:    directive.String(),
+		line:     l.lastLine,
+		column:   l.lastCol,
+		filename: l.filename,
+	}, nil
 }
 
 // readIdentifier reads an identifier
@@ -1594,7 +1749,13 @@ func (l *lexer) readIdentifier() (*token, error) {
 		l.readChar()
 	}
 
-	return &token{typ: tokenIdentifier, value: ident.String()}, nil
+	return &token{
+		typ:      tokenIdentifier,
+		value:    ident.String(),
+		line:     l.lastLine,
+		column:   l.lastCol,
+		filename: l.filename,
+	}, nil
 }
 
 // readNumber reads a number
@@ -1619,7 +1780,13 @@ func (l *lexer) readNumber() (*token, error) {
 		}
 	}
 
-	return &token{typ: tokenNumber, value: num.String()}, nil
+	return &token{
+		typ:      tokenNumber,
+		value:    num.String(),
+		line:     l.lastLine,
+		column:   l.lastCol,
+		filename: l.filename,
+	}, nil
 }
 
 // readString reads a string literal
@@ -1633,7 +1800,7 @@ func (l *lexer) readString() (*token, error) {
 		if l.current == '\\' {
 			l.readChar()
 			if l.eof {
-				return nil, errors.New("unterminated string literal")
+				return nil, fmt.Errorf("%s:%d:%d: unterminated string literal", l.filename, l.lastLine, l.lastCol)
 			}
 		}
 		str.WriteRune(l.current)
@@ -1642,11 +1809,17 @@ func (l *lexer) readString() (*token, error) {
 
 	// Skip the closing quote
 	if l.eof {
-		return nil, errors.New("unterminated string literal")
+		return nil, fmt.Errorf("%s:%d:%d: unterminated string literal", l.filename, l.lastLine, l.lastCol)
 	}
 	l.readChar()
 
-	return &token{typ: tokenString, value: str.String()}, nil
+	return &token{
+		typ:      tokenString,
+		value:    str.String(),
+		line:     l.lastLine,
+		column:   l.lastCol,
+		filename: l.filename,
+	}, nil
 }
 
 // readCharLiteral reads a character literal
@@ -1656,7 +1829,7 @@ func (l *lexer) readCharLiteral() (*token, error) {
 	l.readChar()
 
 	if l.eof {
-		return nil, errors.New("unterminated character literal")
+		return nil, fmt.Errorf("%s:%d:%d: unterminated character literal", l.filename, l.lastLine, l.lastCol)
 	}
 
 	// Handle escape sequence
@@ -1664,7 +1837,7 @@ func (l *lexer) readCharLiteral() (*token, error) {
 		ch.WriteRune(l.current)
 		l.readChar()
 		if l.eof {
-			return nil, errors.New("unterminated character literal")
+			return nil, fmt.Errorf("%s:%d:%d: unterminated character literal", l.filename, l.lastLine, l.lastCol)
 		}
 	}
 	ch.WriteRune(l.current)
@@ -1672,11 +1845,17 @@ func (l *lexer) readCharLiteral() (*token, error) {
 
 	// Skip the closing quote
 	if l.current != '\'' {
-		return nil, errors.New("unterminated character literal")
+		return nil, fmt.Errorf("%s:%d:%d: unterminated character literal", l.filename, l.lastLine, l.lastCol)
 	}
 	l.readChar()
 
-	return &token{typ: tokenChar, value: ch.String()}, nil
+	return &token{
+		typ:      tokenChar,
+		value:    ch.String(),
+		line:     l.lastLine,
+		column:   l.lastCol,
+		filename: l.filename,
+	}, nil
 }
 
 // readOperator reads an operator
@@ -1691,7 +1870,13 @@ func (l *lexer) readOperator() (*token, error) {
 		l.readChar()
 	}
 
-	return &token{typ: tokenOperator, value: op.String()}, nil
+	return &token{
+		typ:      tokenOperator,
+		value:    op.String(),
+		line:     l.lastLine,
+		column:   l.lastCol,
+		filename: l.filename,
+	}, nil
 }
 
 // isLetter checks if a rune is a letter
