@@ -1,0 +1,20 @@
+// 简化版复杂测试文件
+module simple_test {
+  // 定义基本结构体
+  struct Point {
+    float x;
+    float y;
+  };
+
+  // 测试内联结构体
+  typedef struct {
+    string name;
+    long id;
+  } User;
+
+  // 测试接口
+  interface SimpleGraphics {
+    void draw(in Point p);
+    User getUser();
+  };
+};
