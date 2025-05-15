@@ -30,6 +30,8 @@ type TaggedProfile struct {
 type TaggedComponent struct {
 	Tag       uint32
 	Component []byte
+	// DecodedData stores the decoded component data when available
+	DecodedData interface{}
 }
 
 // ProfileBody_1_1 represents the profile body for IIOP 1.1 and later
@@ -159,8 +161,26 @@ func createIIOPProfile(version IIOPVersion, host string, port uint16, objectKey 
 			binary.BigEndian.PutUint32(compLenBytes, uint32(len(comp.Component)))
 			buf = append(buf, compLenBytes...)
 
-			// Component data
-			buf = append(buf, comp.Component...)
+			// Component data - handle specially for components with endianness requirements
+			componentData := comp.Component
+
+			// For components that have encoded data with their own endianness
+			if comp.DecodedData != nil && ComponentNeedsEndianFlag(comp.Tag) {
+				// Re-encode using the proper endianness
+				switch comp.Tag {
+				case TAG_CODE_SETS:
+					if codeSets, ok := comp.DecodedData.(*CodeSets); ok {
+						componentData = EncodeCodeSetsComponent(codeSets, binary.BigEndian)
+					}
+				case TAG_SSL_SEC_TRANS:
+					if ssl, ok := comp.DecodedData.(*SSLData); ok {
+						componentData = EncodeSSLComponent(ssl, binary.BigEndian)
+					}
+					// Add other component types as needed
+				}
+			}
+
+			buf = append(buf, componentData...)
 		}
 	}
 
@@ -357,10 +377,20 @@ func DecodeIIOPProfile(profile []byte) (*ProfileBody_1_1, error) {
 				copy(compData, profile[pos:pos+int(compLen)])
 				pos += int(compLen)
 
-				result.Components = append(result.Components, TaggedComponent{
+				// Create a component with the raw data
+				component := TaggedComponent{
 					Tag:       tag,
 					Component: compData,
-				})
+				}
+
+				// If this component type needs endianness processing, decode it
+				if ComponentNeedsEndianFlag(tag) {
+					if decoded, err := DecodeComponent(tag, compData); err == nil {
+						component.DecodedData = decoded
+					}
+				}
+
+				result.Components = append(result.Components, component)
 			}
 		}
 	}
@@ -425,6 +455,71 @@ func (ior *IOR) GetPrimaryIIOPProfile() (*ProfileBody_1_1, error) {
 	return nil, fmt.Errorf("no IIOP profile found in IOR")
 }
 
+// GetComponent retrieves a specific component from an IIOP profile
+func (profile *ProfileBody_1_1) GetComponent(tag uint32) (*TaggedComponent, error) {
+	for i, comp := range profile.Components {
+		if comp.Tag == tag {
+			return &profile.Components[i], nil
+		}
+	}
+	return nil, fmt.Errorf("component with tag %d not found", tag)
+}
+
+// GetComponentData retrieves and decodes a specific component from an IIOP profile
+func (profile *ProfileBody_1_1) GetComponentData(tag uint32) (interface{}, error) {
+	comp, err := profile.GetComponent(tag)
+	if err != nil {
+		return nil, err
+	}
+
+	// If already decoded, return that
+	if comp.DecodedData != nil {
+		return comp.DecodedData, nil
+	}
+
+	// Otherwise try to decode it
+	return DecodeComponent(tag, comp.Component)
+}
+
+// AddComponent adds a component to an IIOP profile
+func (profile *ProfileBody_1_1) AddComponent(component TaggedComponent) {
+	profile.Components = append(profile.Components, component)
+}
+
+// AddComponentData adds a component to an IIOP profile using the structured data
+func (profile *ProfileBody_1_1) AddComponentData(tag uint32, data interface{}) {
+	component := CreateTaggedComponent(tag, data)
+	profile.AddComponent(component)
+}
+
+// GetCodeSets retrieves the CodeSets component if available
+func (profile *ProfileBody_1_1) GetCodeSets() (*CodeSets, error) {
+	data, err := profile.GetComponentData(TAG_CODE_SETS)
+	if err != nil {
+		return nil, err
+	}
+
+	if codeSets, ok := data.(*CodeSets); ok {
+		return codeSets, nil
+	}
+
+	return nil, fmt.Errorf("invalid CodeSets component data")
+}
+
+// GetSSLData retrieves the SSL component if available
+func (profile *ProfileBody_1_1) GetSSLData() (*SSLData, error) {
+	data, err := profile.GetComponentData(TAG_SSL_SEC_TRANS)
+	if err != nil {
+		return nil, err
+	}
+
+	if ssl, ok := data.(*SSLData); ok {
+		return ssl, nil
+	}
+
+	return nil, fmt.Errorf("invalid SSL component data")
+}
+
 // FormatRepositoryID formats a repository ID according to CORBA standards
 // Format: "IDL:<interface_name>:<version>"
 func FormatRepositoryID(interfaceName string, version string) string {
@@ -478,4 +573,31 @@ func GetNextObjectID() uint64 {
 	id := nextObjectID
 	nextObjectID++
 	return id
+}
+
+// CreateTaggedComponent creates a new TaggedComponent with proper endianness handling
+func CreateTaggedComponent(tag uint32, data interface{}) TaggedComponent {
+	component := TaggedComponent{
+		Tag:         tag,
+		DecodedData: data,
+	}
+
+	// Handle different component types
+	switch tag {
+	case TAG_CODE_SETS:
+		if codeSets, ok := data.(*CodeSets); ok {
+			component.Component = EncodeCodeSetsComponent(codeSets, binary.BigEndian)
+		}
+	case TAG_SSL_SEC_TRANS:
+		if ssl, ok := data.(*SSLData); ok {
+			component.Component = EncodeSSLComponent(ssl, binary.BigEndian)
+		}
+	default:
+		// For raw data
+		if rawData, ok := data.([]byte); ok {
+			component.Component = rawData
+		}
+	}
+
+	return component
 }
