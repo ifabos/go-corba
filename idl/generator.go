@@ -403,14 +403,9 @@ const structTemplate = `{{template "file" .}}
 // {{.Struct.Name}} represents an IDL struct
 type {{.Struct.Name}} struct {
 	{{range .Struct.Fields}}
-	{{capitalize .Name}} {{goType .Type}} {{$.Struct.Name}}Field{{.Name}}
+	{{capitalize .Name}} {{goType .Type}}
 	{{end}}
 }
-
-{{range .Struct.Fields}}
-// {{$.Struct.Name}}Field{{.Name}} is a field tag
-type {{$.Struct.Name}}Field{{.Name}} int
-{{end}}
 
 // {{.Struct.Name}}Helper provides utility functions for {{.Struct.Name}}
 type {{.Struct.Name}}Helper struct{}
