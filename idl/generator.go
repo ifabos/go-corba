@@ -69,6 +69,15 @@ func (g *Generator) initTemplates() error {
 		"outParams":    g.outParams,
 		"paramList":    g.paramList,
 		"argList":      g.argList,
+		"hasPrefix":    strings.HasPrefix,
+		"isStructType": func(typeName string) bool {
+			for _, t := range g.module.Types {
+				if s, ok := t.(*StructType); ok && s.Name == typeName {
+					return true
+				}
+			}
+			return false
+		},
 	})
 
 	// Add templates for different IDL types
@@ -333,7 +342,13 @@ func (stub *{{$.Interface.Name}}Stub) {{.Name}}({{paramList .}}) ({{outParams .}
 	if typedResult, ok := result.({{goType .ReturnType}}); ok {
 		return typedResult, nil
 	}
+	// Return zero value for struct types, nil for pointer/interface
+	{{if and (not (hasPrefix (goType .ReturnType) "*") ) (not (eq (goType .ReturnType) "error")) (isStructType .ReturnType) }}
+	var zero {{goType .ReturnType}}
+	return zero, fmt.Errorf("unexpected result type from {{.Name}}")
+	{{else}}
 	return nil, fmt.Errorf("unexpected result type from {{.Name}}")
+	{{end}}
 	{{end}}
 }
 {{end}}
@@ -350,7 +365,13 @@ func (stub *{{$.Interface.Name}}Stub) Get{{capitalize .Name}}() ({{goType .Type}
 	if typedResult, ok := result.({{goType .Type}}); ok {
 		return typedResult, nil
 	}
-	return {{goType .Type}}{}, fmt.Errorf("unexpected result type from _get_{{.Name}}")
+	// Return zero value for struct types, nil for pointer/interface
+	{{if and (not (hasPrefix (goType .Type) "*") ) (not (eq (goType .Type) "error")) (isStructType .Type) }}
+	var zero {{goType .Type}}
+	return zero, fmt.Errorf("unexpected result type from _get_{{.Name}}")
+	{{else}}
+	return nil, fmt.Errorf("unexpected result type from _get_{{.Name}}")
+	{{end}}
 }
 
 {{if not .Readonly}}
