@@ -1118,7 +1118,7 @@ func (p *Parser) parseTypedef() error {
 
 	// 检查是否是内联结构体定义
 	if p.currentToken.value == "struct" {
-		// 处理内联结构体定义
+		// 处理内联结构体定义，可能是匿名或命名结构体
 		return p.parseInlineStructTypedef()
 	}
 
@@ -1163,23 +1163,36 @@ func (p *Parser) parseTypedef() error {
 	return nil
 }
 
-// parseInlineStructTypedef 解析内联结构体定义，如 typedef struct {...} Name;
+// parseInlineStructTypedef 解析内联结构体定义，如 typedef struct {...} Name; 或 typedef struct StructName {...} Name;
 func (p *Parser) parseInlineStructTypedef() error {
 	// 已经跳过了 "typedef" 和 "struct" 标记
 	if err := p.nextToken(); err != nil {
 		return err
 	}
 
-	// 创建无名结构体
+	// 检查是否有结构体名称（命名结构体）
+	structName := ""
+	if p.currentToken.typ == tokenIdentifier {
+		// 这是一个命名结构体
+		structName = p.currentToken.value
+
+		// 跳过结构体名称
+		if err := p.nextToken(); err != nil {
+			return err
+		}
+	}
+
+	// 创建结构体类型
 	structType := &StructType{
-		Name:   "", // 暂时为空，稍后设置
+		Name:   structName, // 可能为空，表示匿名结构体
 		Module: p.currentModule.Name,
 		Fields: []StructField{},
 	}
 
 	// 期望左大括号
 	if p.currentToken.typ != tokenOpenBrace {
-		return fmt.Errorf("%s:%d:%d: expected '{' after 'struct', got %s", p.lexer.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected '{' after 'struct' or struct name, got %s",
+			p.lexer.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	// 跳过左大括号
@@ -1197,7 +1210,8 @@ func (p *Parser) parseInlineStructTypedef() error {
 
 		// 解析字段名
 		if p.currentToken.typ != tokenIdentifier {
-			return fmt.Errorf("%s:%d:%d: expected field name, got %s", p.lexer.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
+			return fmt.Errorf("%s:%d:%d: expected field name, got %s",
+				p.lexer.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 		}
 
 		fieldName := p.currentToken.value
@@ -1215,7 +1229,8 @@ func (p *Parser) parseInlineStructTypedef() error {
 
 		// 期望分号
 		if p.currentToken.typ != tokenSemicolon {
-			return fmt.Errorf("%s:%d:%d: expected ';' after field definition, got %s", p.lexer.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
+			return fmt.Errorf("%s:%d:%d: expected ';' after field definition, got %s",
+				p.lexer.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 		}
 
 		// 跳过分号
@@ -1229,33 +1244,67 @@ func (p *Parser) parseInlineStructTypedef() error {
 		return err
 	}
 
-	// 获取typedef名称
+	// 获取typedef别名
 	if p.currentToken.typ != tokenIdentifier {
-		return fmt.Errorf("%s:%d:%d: expected typedef name, got %s", p.lexer.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected typedef name, got %s",
+			p.lexer.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
-	typeName := p.currentToken.value
+	typedefName := p.currentToken.value
 
-	// 设置结构体名称为typedef名称
-	structType.Name = typeName
+	// 如果结构体有名称，先将结构体添加到模块
+	if structName != "" {
+		// 如果在typedef之前结构体已经有名字，我们需要先添加结构体定义
+		p.currentModule.AddType(structName, structType)
 
-	// 跳过typedef名称
-	if err := p.nextToken(); err != nil {
-		return err
+		// 然后创建一个typedef，指向已命名的结构体
+		typeDef := &TypeDef{
+			Name:     typedefName,
+			Module:   p.currentModule.Name,
+			OrigType: &ScopedType{Name: structName},
+		}
+
+		// 跳过typedef名称
+		if err := p.nextToken(); err != nil {
+			return err
+		}
+
+		// 期望分号
+		if p.currentToken.typ != tokenSemicolon {
+			return fmt.Errorf("%s:%d:%d: expected ';' after typedef struct definition, got %s",
+				p.lexer.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
+		}
+
+		// 跳过分号
+		if err := p.nextToken(); err != nil {
+			return err
+		}
+
+		// 添加typedef到当前模块
+		p.currentModule.AddType(typedefName, typeDef)
+	} else {
+		// 对于匿名结构体，设置结构体名称为typedef名称
+		structType.Name = typedefName
+
+		// 跳过typedef名称
+		if err := p.nextToken(); err != nil {
+			return err
+		}
+
+		// 期望分号
+		if p.currentToken.typ != tokenSemicolon {
+			return fmt.Errorf("%s:%d:%d: expected ';' after typedef struct definition, got %s",
+				p.lexer.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
+		}
+
+		// 跳过分号
+		if err := p.nextToken(); err != nil {
+			return err
+		}
+
+		// 添加结构体类型到当前模块
+		p.currentModule.AddType(typedefName, structType)
 	}
-
-	// 期望分号
-	if p.currentToken.typ != tokenSemicolon {
-		return fmt.Errorf("%s:%d:%d: expected ';' after typedef struct definition, got %s", p.lexer.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
-	}
-
-	// 跳过分号
-	if err := p.nextToken(); err != nil {
-		return err
-	}
-
-	// 添加结构体类型到当前模块
-	p.currentModule.AddType(typeName, structType)
 
 	return nil
 }

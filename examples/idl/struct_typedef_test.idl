@@ -1,0 +1,17 @@
+// 测试结构体的typedef格式
+struct SimpleStruct {
+    string name;
+    long id;
+};
+
+typedef SimpleStruct StructAlias1;
+
+typedef struct ComplexStruct {
+    double x;
+    double y;
+} StructAlias2;
+
+typedef struct NamedStruct {
+    boolean flag;
+    octet data;
+} StructAlias3;
