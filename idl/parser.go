@@ -957,6 +957,30 @@ func (p *Parser) parseType() (Type, error) {
 		}, nil
 	}
 
+	// Handle 'long long' (must check before primitive types)
+	if typeName == "long" && p.currentToken.value == "long" {
+		// Skip second "long"
+		if err := p.nextToken(); err != nil {
+			return nil, err
+		}
+		return &SimpleType{Name: TypeLongLong}, nil
+	}
+	// Handle 'unsigned long long'
+	if typeName == "unsigned" && p.currentToken.value == "long" {
+		// Skip first 'long'
+		if err := p.nextToken(); err != nil {
+			return nil, err
+		}
+		if p.currentToken.value == "long" {
+			// Skip second 'long'
+			if err := p.nextToken(); err != nil {
+				return nil, err
+			}
+			return &SimpleType{Name: TypeULongLong}, nil
+		}
+		return &SimpleType{Name: TypeULong}, nil
+	}
+
 	// Handle primitive types
 	for _, bt := range []BasicType{
 		TypeShort, TypeLong, TypeLongLong, TypeUShort, TypeULong, TypeULongLong,
@@ -966,46 +990,6 @@ func (p *Parser) parseType() (Type, error) {
 		if string(bt) == typeName {
 			return &SimpleType{Name: bt}, nil
 		}
-	}
-
-	// Handle "unsigned long" and "unsigned short"
-	if typeName == "unsigned" {
-		// Get the next part of the type
-		if p.currentToken.value == "short" {
-			// Skip "short"
-			if err := p.nextToken(); err != nil {
-				return nil, err
-			}
-			return &SimpleType{Name: TypeUShort}, nil
-		} else if p.currentToken.value == "long" {
-			// Skip "long"
-			if err := p.nextToken(); err != nil {
-				return nil, err
-			}
-
-			// Check for "long long"
-			if p.currentToken.value == "long" {
-				// Skip second "long"
-				if err := p.nextToken(); err != nil {
-					return nil, err
-				}
-				return &SimpleType{Name: TypeULongLong}, nil
-			}
-
-			return &SimpleType{Name: TypeULong}, nil
-		}
-
-		return nil, fmt.Errorf("%s:%d:%d: expected 'short' or 'long' after 'unsigned', got %s",
-			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
-	}
-
-	// Handle "long long"
-	if typeName == "long" && p.currentToken.value == "long" {
-		// Skip second "long"
-		if err := p.nextToken(); err != nil {
-			return nil, err
-		}
-		return &SimpleType{Name: TypeLongLong}, nil
 	}
 
 	// 处理作用域名称，例如 A::B::C
