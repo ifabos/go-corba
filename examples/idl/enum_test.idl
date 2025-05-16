@@ -1,0 +1,7 @@
+module Test {
+    enum Colors {
+        RED,
+        GREEN,
+        BLUE,
+    };
+};
