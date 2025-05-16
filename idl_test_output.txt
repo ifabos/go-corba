@@ -1,0 +1,1 @@
+ok  	github.com/ifabos/go-corba/idl	0.003s
