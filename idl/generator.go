@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+
+	"golang.org/x/tools/imports"
 )
 
 // Generator generates Go code from IDL definitions
@@ -167,19 +169,23 @@ func (g *Generator) generateType(t Type, dir string) error {
 		return err
 	}
 
-	// Format the generated code
-	formatted, err := format.Source(buf.Bytes())
-	if err != nil {
-		// If formatting fails, write the unformatted code for debugging
-		filename := filepath.Join(dir, strings.ToLower(t.GoTypeName())+".go.unformatted")
-		if err := os.WriteFile(filename, buf.Bytes(), 0644); err != nil {
-			return err
-		}
-		return fmt.Errorf("failed to format generated code for %s: %v", t.TypeName(), err)
-	}
-
-	// Write the formatted code to file
 	filename := filepath.Join(dir, strings.ToLower(t.GoTypeName())+".go")
+	// Use goimports for better formatting and import grouping
+	var formatted []byte
+	formatted, err = imports.Process(filename, buf.Bytes(), nil)
+	if err != nil {
+		// Fallback to go/format if goimports fails
+		formatted, err = format.Source(buf.Bytes())
+		if err != nil {
+			// If formatting fails, write the unformatted code for debugging
+			unformattedFile := filename + ".unformatted"
+			if err := os.WriteFile(unformattedFile, buf.Bytes(), 0644); err != nil {
+				return err
+			}
+			return fmt.Errorf("failed to format generated code for %s: %v", t.TypeName(), err)
+		}
+	}
+	// Write the formatted code to file
 	return os.WriteFile(filename, formatted, 0644)
 }
 
