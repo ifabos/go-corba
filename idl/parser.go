@@ -193,7 +193,8 @@ func (p *Parser) parsePreprocessor() error {
 				includeType = "user"
 				includePath = matchUser[1]
 			} else {
-				return fmt.Errorf("invalid include directive: %s", directive)
+				return fmt.Errorf("%s:%d:%d: invalid include directive: %s",
+					p.currentToken.filename, p.currentToken.line, p.currentToken.column, directive)
 			}
 		}
 
@@ -207,7 +208,8 @@ func (p *Parser) parsePreprocessor() error {
 		// 尝试打开包含的文件
 		reader, includeFilePath, err := p.resolveIncludePath(includePath, includeType)
 		if err != nil {
-			return fmt.Errorf("failed to resolve include %s: %w", includePath, err)
+			return fmt.Errorf("%s:%d:%d: failed to resolve include %s: %w",
+				p.currentToken.filename, p.currentToken.line, p.currentToken.column, includePath, err)
 		}
 
 		// 标记文件已被包含
@@ -225,7 +227,8 @@ func (p *Parser) parsePreprocessor() error {
 
 		// 解析包含的文件
 		if err := includeParser.Parse(reader); err != nil {
-			return fmt.Errorf("failed to parse included file %s: %w", includePath, err)
+			return fmt.Errorf("%s:%d:%d: failed to parse included file %s: %w",
+				p.currentToken.filename, p.currentToken.line, p.currentToken.column, includePath, err)
 		}
 
 		// 合并包含文件中定义的类型到当前模块
@@ -283,7 +286,8 @@ func (p *Parser) resolveIncludePath(path string, includeType string) (io.Reader,
 		}
 	}
 
-	return nil, "", fmt.Errorf("file not found: %s", path)
+	return nil, "", fmt.Errorf("%s:%d:%d: file not found: %s",
+		p.currentToken.filename, p.currentToken.line, p.currentToken.column, path)
 }
 
 // parsePragma 处理 IDL 中的 pragma 指令
@@ -468,7 +472,8 @@ func (p *Parser) parseInterface() error {
 
 	// Get interface name
 	if p.currentToken.typ != tokenIdentifier {
-		return fmt.Errorf("expected interface name, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected interface name, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	interfaceName := p.currentToken.value
@@ -497,7 +502,8 @@ func (p *Parser) parseInterface() error {
 		// Parse parent interfaces
 		for {
 			if p.currentToken.typ != tokenIdentifier {
-				return fmt.Errorf("expected parent interface name, got %s", p.currentToken.value)
+				return fmt.Errorf("%s:%d:%d: expected parent interface name, got %s",
+					p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 			}
 
 			interfaceType.Parents = append(interfaceType.Parents, p.currentToken.value)
@@ -521,7 +527,8 @@ func (p *Parser) parseInterface() error {
 
 	// Expect opening brace
 	if p.currentToken.typ != tokenOpenBrace {
-		return fmt.Errorf("expected '{' after interface name, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected '{' after interface name, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	// Skip the opening brace
@@ -543,7 +550,8 @@ func (p *Parser) parseInterface() error {
 
 				// Expect "attribute"
 				if p.currentToken.value != "attribute" {
-					return fmt.Errorf("expected 'attribute' after 'readonly', got %s", p.currentToken.value)
+					return fmt.Errorf("%s:%d:%d: expected 'attribute' after 'readonly', got %s",
+						p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 				}
 			}
 
@@ -560,7 +568,8 @@ func (p *Parser) parseInterface() error {
 
 			// Parse attribute name
 			if p.currentToken.typ != tokenIdentifier {
-				return fmt.Errorf("expected attribute name, got %s", p.currentToken.value)
+				return fmt.Errorf("%s:%d:%d: expected attribute name, got %s",
+					p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 			}
 
 			attrName := p.currentToken.value
@@ -582,7 +591,8 @@ func (p *Parser) parseInterface() error {
 
 			// Expect semicolon
 			if p.currentToken.typ != tokenSemicolon {
-				return fmt.Errorf("expected ';' after attribute, got %s", p.currentToken.value)
+				return fmt.Errorf("%s:%d:%d: expected ';' after attribute, got %s",
+					p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 			}
 
 			// Skip semicolon
@@ -624,7 +634,8 @@ func (p *Parser) parseInterface() error {
 
 		// Expect opening parenthesis
 		if p.currentToken.typ != tokenOpenParen {
-			return fmt.Errorf("expected '(' after operation name, got %s", p.currentToken.value)
+			return fmt.Errorf("%s:%d:%d: expected '(' after operation name, got %s",
+				p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 		}
 
 		// Skip opening parenthesis
@@ -654,7 +665,8 @@ func (p *Parser) parseInterface() error {
 
 				// Parse parameter name
 				if p.currentToken.typ != tokenIdentifier {
-					return fmt.Errorf("expected parameter name, got %s", p.currentToken.value)
+					return fmt.Errorf("%s:%d:%d: expected parameter name, got %s",
+						p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 				}
 
 				paramName := p.currentToken.value
@@ -688,7 +700,8 @@ func (p *Parser) parseInterface() error {
 
 		// Expect closing parenthesis
 		if p.currentToken.typ != tokenCloseParen {
-			return fmt.Errorf("expected ')' after parameters, got %s", p.currentToken.value)
+			return fmt.Errorf("%s:%d:%d: expected ')' after parameters, got %s",
+				p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 		}
 
 		// Skip closing parenthesis
@@ -706,7 +719,8 @@ func (p *Parser) parseInterface() error {
 
 			// Expect opening parenthesis
 			if p.currentToken.typ != tokenOpenParen {
-				return fmt.Errorf("expected '(' after raises, got %s", p.currentToken.value)
+				return fmt.Errorf("%s:%d:%d: expected '(' after raises, got %s",
+					p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 			}
 
 			// Skip opening parenthesis
@@ -717,7 +731,8 @@ func (p *Parser) parseInterface() error {
 			// Parse exception list
 			for {
 				if p.currentToken.typ != tokenIdentifier {
-					return fmt.Errorf("expected exception name, got %s", p.currentToken.value)
+					return fmt.Errorf("%s:%d:%d: expected exception name, got %s",
+						p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 				}
 
 				raises = append(raises, p.currentToken.value)
@@ -740,7 +755,8 @@ func (p *Parser) parseInterface() error {
 
 			// Expect closing parenthesis
 			if p.currentToken.typ != tokenCloseParen {
-				return fmt.Errorf("expected ')' after exception list, got %s", p.currentToken.value)
+				return fmt.Errorf("%s:%d:%d: expected ')' after exception list, got %s",
+					p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 			}
 
 			// Skip closing parenthesis
@@ -763,7 +779,8 @@ func (p *Parser) parseInterface() error {
 
 		// Expect semicolon
 		if p.currentToken.typ != tokenSemicolon {
-			return fmt.Errorf("expected ';' after operation, got %s", p.currentToken.value)
+			return fmt.Errorf("%s:%d:%d: expected ';' after operation, got %s",
+				p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 		}
 
 		// Skip semicolon
@@ -779,7 +796,8 @@ func (p *Parser) parseInterface() error {
 
 	// Expect semicolon
 	if p.currentToken.typ != tokenSemicolon {
-		return fmt.Errorf("expected ';' after interface definition, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected ';' after interface definition, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	// Skip the semicolon
@@ -796,7 +814,8 @@ func (p *Parser) parseInterface() error {
 // parseType parses an IDL type
 func (p *Parser) parseType() (Type, error) {
 	if p.currentToken.typ != tokenIdentifier {
-		return nil, fmt.Errorf("expected type name, got %s", p.currentToken.value)
+		return nil, fmt.Errorf("%s:%d:%d: expected type name, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	typeName := p.currentToken.value
@@ -810,7 +829,8 @@ func (p *Parser) parseType() (Type, error) {
 	if typeName == "sequence" {
 		// Expect '<'
 		if p.currentToken.value != "<" {
-			return nil, fmt.Errorf("expected '<' after sequence, got %s", p.currentToken.value)
+			return nil, fmt.Errorf("%s:%d:%d: expected '<' after sequence, got %s",
+				p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 		}
 
 		// Skip '<'
@@ -834,12 +854,14 @@ func (p *Parser) parseType() (Type, error) {
 
 			// Parse size
 			if p.currentToken.typ != tokenNumber {
-				return nil, fmt.Errorf("expected sequence size, got %s", p.currentToken.value)
+				return nil, fmt.Errorf("%s:%d:%d: expected sequence size, got %s",
+					p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 			}
 
 			size, err := strconv.Atoi(p.currentToken.value)
 			if err != nil {
-				return nil, fmt.Errorf("invalid sequence size: %s", p.currentToken.value)
+				return nil, fmt.Errorf("%s:%d:%d: invalid sequence size: %s",
+					p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 			}
 
 			maxSize = size
@@ -852,7 +874,8 @@ func (p *Parser) parseType() (Type, error) {
 
 		// Expect '>'
 		if p.currentToken.value != ">" {
-			return nil, fmt.Errorf("expected '>' after sequence type, got %s", p.currentToken.value)
+			return nil, fmt.Errorf("%s:%d:%d: expected '>' after sequence type, got %s",
+				p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 		}
 
 		// Skip '>'
@@ -904,7 +927,8 @@ func (p *Parser) parseType() (Type, error) {
 			return &SimpleType{Name: TypeULong}, nil
 		}
 
-		return nil, fmt.Errorf("expected 'short' or 'long' after 'unsigned', got %s", p.currentToken.value)
+		return nil, fmt.Errorf("%s:%d:%d: expected 'short' or 'long' after 'unsigned', got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	// Handle "long long"
@@ -934,7 +958,8 @@ func (p *Parser) parseStruct() error {
 
 	// Get struct name
 	if p.currentToken.typ != tokenIdentifier {
-		return fmt.Errorf("expected struct name, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected struct name, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	structName := p.currentToken.value
@@ -953,7 +978,8 @@ func (p *Parser) parseStruct() error {
 
 	// Expect opening brace
 	if p.currentToken.typ != tokenOpenBrace {
-		return fmt.Errorf("expected '{' after struct name, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected '{' after struct name, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	// Skip the opening brace
@@ -971,7 +997,8 @@ func (p *Parser) parseStruct() error {
 
 		// Parse field name
 		if p.currentToken.typ != tokenIdentifier {
-			return fmt.Errorf("expected field name, got %s", p.currentToken.value)
+			return fmt.Errorf("%s:%d:%d: expected field name, got %s",
+				p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 		}
 
 		fieldName := p.currentToken.value
@@ -989,7 +1016,8 @@ func (p *Parser) parseStruct() error {
 
 		// Expect semicolon
 		if p.currentToken.typ != tokenSemicolon {
-			return fmt.Errorf("expected ';' after field definition, got %s", p.currentToken.value)
+			return fmt.Errorf("%s:%d:%d: expected ';' after field definition, got %s",
+				p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 		}
 
 		// Skip semicolon
@@ -1005,7 +1033,8 @@ func (p *Parser) parseStruct() error {
 
 	// Expect semicolon
 	if p.currentToken.typ != tokenSemicolon {
-		return fmt.Errorf("expected ';' after struct definition, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected ';' after struct definition, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	// Skip the semicolon
@@ -1028,7 +1057,8 @@ func (p *Parser) parseEnum() error {
 
 	// Get enum name
 	if p.currentToken.typ != tokenIdentifier {
-		return fmt.Errorf("expected enum name, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected enum name, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	enumName := p.currentToken.value
@@ -1047,7 +1077,8 @@ func (p *Parser) parseEnum() error {
 
 	// Expect opening brace
 	if p.currentToken.typ != tokenOpenBrace {
-		return fmt.Errorf("expected '{' after enum name, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected '{' after enum name, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	// Skip the opening brace
@@ -1060,7 +1091,8 @@ func (p *Parser) parseEnum() error {
 	for p.currentToken.typ != tokenCloseBrace {
 		// Parse element name
 		if p.currentToken.typ != tokenIdentifier {
-			return fmt.Errorf("expected enum element name, got %s", p.currentToken.value)
+			return fmt.Errorf("%s:%d:%d: expected enum element name, got %s",
+				p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 		}
 
 		elementName := p.currentToken.value
@@ -1081,7 +1113,8 @@ func (p *Parser) parseEnum() error {
 			}
 		} else if p.currentToken.typ != tokenCloseBrace {
 			// If not a comma or closing brace, it's an error
-			return fmt.Errorf("expected ',' or '}' after enum element, got %s", p.currentToken.value)
+			return fmt.Errorf("%s:%d:%d: expected ',' or '}' after enum element, got %s",
+				p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 		}
 	}
 
@@ -1092,7 +1125,8 @@ func (p *Parser) parseEnum() error {
 
 	// Expect semicolon
 	if p.currentToken.typ != tokenSemicolon {
-		return fmt.Errorf("expected ';' after enum definition, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected ';' after enum definition, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	// Skip the semicolon
@@ -1315,7 +1349,8 @@ func (p *Parser) parseUnion() error {
 
 	// Get union name
 	if p.currentToken.typ != tokenIdentifier {
-		return fmt.Errorf("expected union name, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected union name, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	unionName := p.currentToken.value
@@ -1327,7 +1362,8 @@ func (p *Parser) parseUnion() error {
 
 	// Expect "switch"
 	if p.currentToken.value != "switch" {
-		return fmt.Errorf("expected 'switch' after union name, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected 'switch' after union name, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	// Skip "switch"
@@ -1337,7 +1373,8 @@ func (p *Parser) parseUnion() error {
 
 	// Expect opening parenthesis
 	if p.currentToken.typ != tokenOpenParen {
-		return fmt.Errorf("expected '(' after switch, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected '(' after switch, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	// Skip opening parenthesis
@@ -1353,7 +1390,8 @@ func (p *Parser) parseUnion() error {
 
 	// Expect closing parenthesis
 	if p.currentToken.typ != tokenCloseParen {
-		return fmt.Errorf("expected ')' after discriminant type, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected ')' after discriminant type, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	// Skip closing parenthesis
@@ -1371,7 +1409,8 @@ func (p *Parser) parseUnion() error {
 
 	// Expect opening brace
 	if p.currentToken.typ != tokenOpenBrace {
-		return fmt.Errorf("expected '{' after union header, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected '{' after union header, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	// Skip the opening brace
@@ -1411,7 +1450,8 @@ func (p *Parser) parseUnion() error {
 
 			// Expect colon
 			if p.currentToken.typ != tokenColon {
-				return fmt.Errorf("expected ':' after case label, got %s", p.currentToken.value)
+				return fmt.Errorf("%s:%d:%d: expected ':' after case label, got %s",
+					p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 			}
 
 			// Skip colon
@@ -1428,7 +1468,8 @@ func (p *Parser) parseUnion() error {
 
 		// Parse case name
 		if p.currentToken.typ != tokenIdentifier {
-			return fmt.Errorf("expected case name, got %s", p.currentToken.value)
+			return fmt.Errorf("%s:%d:%d: expected case name, got %s",
+				p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 		}
 
 		caseName := p.currentToken.value
@@ -1447,7 +1488,8 @@ func (p *Parser) parseUnion() error {
 
 		// Expect semicolon
 		if p.currentToken.typ != tokenSemicolon {
-			return fmt.Errorf("expected ';' after case, got %s", p.currentToken.value)
+			return fmt.Errorf("%s:%d:%d: expected ';' after case, got %s",
+				p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 		}
 
 		// Skip semicolon
@@ -1463,7 +1505,8 @@ func (p *Parser) parseUnion() error {
 
 	// Expect semicolon
 	if p.currentToken.typ != tokenSemicolon {
-		return fmt.Errorf("expected ';' after union definition, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected ';' after union definition, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	// Skip the semicolon
@@ -1506,7 +1549,8 @@ func (p *Parser) parseException() error {
 
 	// Get exception name
 	if p.currentToken.typ != tokenIdentifier {
-		return fmt.Errorf("expected exception name, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected exception name, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	exceptionName := p.currentToken.value
@@ -1525,7 +1569,8 @@ func (p *Parser) parseException() error {
 
 	// Expect opening brace
 	if p.currentToken.typ != tokenOpenBrace {
-		return fmt.Errorf("expected '{' after exception name, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected '{' after exception name, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	// Skip the opening brace
@@ -1543,7 +1588,8 @@ func (p *Parser) parseException() error {
 
 		// Parse field name
 		if p.currentToken.typ != tokenIdentifier {
-			return fmt.Errorf("expected field name, got %s", p.currentToken.value)
+			return fmt.Errorf("%s:%d:%d: expected field name, got %s",
+				p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 		}
 
 		fieldName := p.currentToken.value
@@ -1561,7 +1607,8 @@ func (p *Parser) parseException() error {
 
 		// Expect semicolon
 		if p.currentToken.typ != tokenSemicolon {
-			return fmt.Errorf("expected ';' after field definition, got %s", p.currentToken.value)
+			return fmt.Errorf("%s:%d:%d: expected ';' after field definition, got %s",
+				p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 		}
 
 		// Skip semicolon
@@ -1577,7 +1624,8 @@ func (p *Parser) parseException() error {
 
 	// Expect semicolon
 	if p.currentToken.typ != tokenSemicolon {
-		return fmt.Errorf("expected ';' after exception definition, got %s", p.currentToken.value)
+		return fmt.Errorf("%s:%d:%d: expected ';' after exception definition, got %s",
+			p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
 	}
 
 	// Skip the semicolon
@@ -1759,7 +1807,7 @@ func (l *lexer) nextToken() (*token, error) {
 		// Operator
 		return l.readOperator()
 	default:
-		return nil, fmt.Errorf("unexpected character: %c", l.current)
+		return nil, fmt.Errorf("%s:%d:%d: unexpected character: %c", l.filename, l.lastLine, l.lastCol, l.current)
 	}
 }
 
