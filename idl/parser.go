@@ -490,6 +490,7 @@ func (p *Parser) parseInterface() error {
 		Parents:    []string{},
 		Operations: []Operation{},
 		Attributes: []Attribute{},
+		Types:      make(map[string]Type), // Initialize for nested enums
 	}
 
 	// Check for inheritance
@@ -600,6 +601,73 @@ func (p *Parser) parseInterface() error {
 				return err
 			}
 
+			continue
+		}
+
+		// Support enums inside interface (CORBA spec)
+		if p.currentToken.value == "enum" {
+			if err := p.nextToken(); err != nil {
+				return err
+			}
+			// Get enum name
+			if p.currentToken.typ != tokenIdentifier {
+				return fmt.Errorf("%s:%d:%d: expected enum name, got %s",
+					p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
+			}
+			enumName := p.currentToken.value
+			if err := p.nextToken(); err != nil {
+				return err
+			}
+			// Create enum type
+			enumType := &EnumType{
+				Name:     enumName,
+				Module:   p.currentModule.Name,
+				Elements: []string{},
+			}
+			// Expect opening brace
+			if p.currentToken.typ != tokenOpenBrace {
+				return fmt.Errorf("%s:%d:%d: expected '{' after enum name, got %s",
+					p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
+			}
+			if err := p.nextToken(); err != nil {
+				return err
+			}
+			// Parse enum elements
+			for p.currentToken.typ != tokenCloseBrace {
+				if p.currentToken.typ != tokenIdentifier {
+					return fmt.Errorf("%s:%d:%d: expected enum element name, got %s",
+						p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
+				}
+				enumType.Elements = append(enumType.Elements, p.currentToken.value)
+				if err := p.nextToken(); err != nil {
+					return err
+				}
+				if p.currentToken.typ == tokenComma {
+					if err := p.nextToken(); err != nil {
+						return err
+					}
+				} else if p.currentToken.typ != tokenCloseBrace {
+					return fmt.Errorf("%s:%d:%d: expected ',' or '}' after enum element, got %s",
+						p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
+				}
+			}
+			// Skip the closing brace
+			if err := p.nextToken(); err != nil {
+				return err
+			}
+			// Expect semicolon
+			if p.currentToken.typ != tokenSemicolon {
+				return fmt.Errorf("%s:%d:%d: expected ';' after enum definition, got %s",
+					p.currentToken.filename, p.currentToken.line, p.currentToken.column, p.currentToken.value)
+			}
+			if err := p.nextToken(); err != nil {
+				return err
+			}
+			// Add enum to the interface's Types map (or currentModule if that's your design)
+			if interfaceType.Types == nil {
+				interfaceType.Types = make(map[string]Type)
+			}
+			interfaceType.Types[enumName] = enumType
 			continue
 		}
 

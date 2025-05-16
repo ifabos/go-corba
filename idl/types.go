@@ -229,6 +229,7 @@ type InterfaceType struct {
 	Parents    []string
 	Operations []Operation
 	Attributes []Attribute
+	Types      map[string]Type // Support for nested enums/types
 }
 
 // Operation represents an operation in an IDL interface
