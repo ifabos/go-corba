@@ -1056,7 +1056,8 @@ func (p *Parser) parseEnum() error {
 	}
 
 	// Parse enum elements
-	for {
+	// Continue parsing until we find a closing brace
+	for p.currentToken.typ != tokenCloseBrace {
 		// Parse element name
 		if p.currentToken.typ != tokenIdentifier {
 			return fmt.Errorf("expected enum element name, got %s", p.currentToken.value)
@@ -1072,20 +1073,16 @@ func (p *Parser) parseEnum() error {
 			return err
 		}
 
-		// Check for comma
-		if p.currentToken.typ != tokenComma {
-			break
+		// Check for comma or closing brace
+		if p.currentToken.typ == tokenComma {
+			// Skip comma
+			if err := p.nextToken(); err != nil {
+				return err
+			}
+		} else if p.currentToken.typ != tokenCloseBrace {
+			// If not a comma or closing brace, it's an error
+			return fmt.Errorf("expected ',' or '}' after enum element, got %s", p.currentToken.value)
 		}
-
-		// Skip comma
-		if err := p.nextToken(); err != nil {
-			return err
-		}
-	}
-
-	// Expect closing brace
-	if p.currentToken.typ != tokenCloseBrace {
-		return fmt.Errorf("expected '}' after enum elements, got %s", p.currentToken.value)
 	}
 
 	// Skip the closing brace

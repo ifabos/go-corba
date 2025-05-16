@@ -1,0 +1,19 @@
+module BracketTest {
+    // Enum with brackets on same line
+    enum SameLineBrackets { ONE, TWO, THREE };
+
+    // Enum with opening bracket on same line, closing bracket on new line
+    enum MixedBrackets { 
+        ALPHA, 
+        BETA, 
+        GAMMA
+    };
+
+    // Enum with both brackets on different lines
+    enum NewLineBrackets 
+    {
+        FIRST,
+        SECOND,
+        THIRD
+    };
+};

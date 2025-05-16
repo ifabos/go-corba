@@ -1,0 +1,7 @@
+module Test {
+    enum Status {
+        PENDING,
+        ACTIVE,
+        COMPLETED  // no trailing comma
+    };
+};

@@ -1,0 +1,15 @@
+module MixedTest {
+    // Enum with trailing comma
+    enum WithTrailingComma {
+        ONE,
+        TWO,
+        THREE,
+    };
+
+    // Enum without trailing comma
+    enum WithoutTrailingComma {
+        ALPHA,
+        BETA,
+        GAMMA
+    };
+};
