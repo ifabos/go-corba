@@ -59,6 +59,16 @@ func (g *Generator) Generate() error {
 
 // Initialize the templates used for code generation
 func (g *Generator) initTemplates() error {
+	// resolveType 递归解引用 TypeDef，返回最终 Type
+	resolveType := func(t Type) Type {
+		for {
+			td, ok := t.(*TypeDef)
+			if !ok {
+				return t
+			}
+			t = td.OrigType
+		}
+	}
 	g.templates = template.New("idl").Funcs(template.FuncMap{
 		"toLower":      strings.ToLower,
 		"toUpper":      strings.ToUpper,
@@ -70,13 +80,30 @@ func (g *Generator) initTemplates() error {
 		"paramList":    g.paramList,
 		"argList":      g.argList,
 		"hasPrefix":    strings.HasPrefix,
-		"isStructType": func(typeName string) bool {
-			for _, t := range g.module.Types {
-				if s, ok := t.(*StructType); ok && s.Name == typeName {
-					return true
+		"isStructType": func(arg interface{}) (res bool) {
+			// 支持 Type, *StructType, string (type name)，并递归解 typedef
+			switch v := arg.(type) {
+			case *StructType:
+				return true
+			case Type:
+				_, ok := resolveType(v).(*StructType)
+				return ok
+			case string:
+				for _, t := range g.module.Types {
+					if s, ok := t.(*StructType); ok && s.Name == v {
+						return true
+					}
+					if td, ok := t.(*TypeDef); ok && td.Name == v {
+						_, ok := resolveType(td).(*StructType)
+						if ok {
+							return true
+						}
+					}
 				}
+				return false
+			default:
+				return false
 			}
-			return false
 		},
 	})
 
@@ -326,7 +353,7 @@ type {{.Interface.Name}}Stub struct {
 // {{.Name}} implements the {{.Name}} operation
 func (stub *{{$.Interface.Name}}Stub) {{.Name}}({{paramList .}}) ({{outParams .}}) {
 	// Invoke remote method via CORBA
-	result, err := stub.ObjectRef.Invoke("{{.Name}}", {{argList .}})
+	_result, err := stub.ObjectRef.Invoke("{{.Name}}", {{argList .}})
 	if err != nil {
 		{{if eq (goType .ReturnType) ""}}
 		return err
@@ -339,7 +366,7 @@ func (stub *{{$.Interface.Name}}Stub) {{.Name}}({{paramList .}}) ({{outParams .}
 	{{if eq (goType .ReturnType) ""}}
 	return nil
 	{{else}}
-	if typedResult, ok := result.({{goType .ReturnType}}); ok {
+	if typedResult, ok := _result.({{goType .ReturnType}}); ok {
 		return typedResult, nil
 	}
 	// Return zero value for struct types, nil for pointer/interface
@@ -356,13 +383,13 @@ func (stub *{{$.Interface.Name}}Stub) {{.Name}}({{paramList .}}) ({{outParams .}
 {{range .Interface.Attributes}}
 // Get{{capitalize .Name}} gets the {{.Name}} attribute
 func (stub *{{$.Interface.Name}}Stub) Get{{capitalize .Name}}() ({{goType .Type}}, error) {
-	result, err := stub.ObjectRef.Invoke("_get_{{.Name}}")
+	_result, err := stub.ObjectRef.Invoke("_get_{{.Name}}")
 	if err != nil {
 		var zero {{goType .Type}}
 		return zero, err
 	}
 	
-	if typedResult, ok := result.({{goType .Type}}); ok {
+	if typedResult, ok := _result.({{goType .Type}}); ok {
 		return typedResult, nil
 	}
 	// Return zero value for struct types, nil for pointer/interface
@@ -394,13 +421,22 @@ func (servant *{{.Interface.Name}}Servant) Dispatch(methodName string, args []in
 	switch methodName {
 	{{range .Interface.Operations}}
 	case "{{.Name}}":
-		// TODO: Convert args to appropriate types
+		// 自动解包 args 并传递给实现方法
+		if len(args) != {{len .Parameters}} {
+			return nil, fmt.Errorf("wrong number of arguments for {{.Name}}: want %d, got %d", {{len .Parameters}}, len(args))
+		}
+		{{- range $i, $p := .Parameters}}
+		{{uncapitalize $p.Name}}, ok := args[{{$i}}].({{goType $p.Type}})
+		if !ok {
+			return nil, fmt.Errorf("argument %d for {{$.Name}} has wrong type", {{$i}})
+		}
+		{{- end}}
 		{{if eq (goType .ReturnType) ""}}
-		err := servant.Impl.{{.Name}}(/* args */)
+		err := servant.Impl.{{.Name}}({{range $i, $p := .Parameters}}{{if $i}}, {{end}}{{uncapitalize $p.Name}}{{end}})
 		return nil, err
 		{{else}}
-		result, err := servant.Impl.{{.Name}}(/* args */)
-		return result, err
+		_result, err := servant.Impl.{{.Name}}({{range $i, $p := .Parameters}}{{if $i}}, {{end}}{{uncapitalize $p.Name}}{{end}})
+		return _result, err
 		{{end}}
 	{{end}}
 	{{range .Interface.Attributes}}

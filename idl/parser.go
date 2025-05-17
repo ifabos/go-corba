@@ -997,8 +997,8 @@ func (p *Parser) parseType() (Type, error) {
 		return &ScopedType{Name: typeName}, nil
 	}
 
-	// 对于其他类型，以简单类型返回
-	return &SimpleType{Name: BasicType(typeName)}, nil
+	// 对于其他类型，以StructType类型返回
+	return &StructType{Name: typeName}, nil
 }
 
 // parseStruct parses an IDL struct
