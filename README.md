@@ -14,6 +14,9 @@ Go-CORBA provides a complete Software Development Kit (SDK) for building CORBA a
 - Naming Service integration
 - Dynamic Invocation Interface (DII)
 - Type management and marshaling
+- **Redis-based synchronization system for distributed instances**
+- **Change listeners and data loaders for real-time synchronization**
+- **Redis Streams and queues for message-based synchronization**
 
 ## Installation
 
@@ -47,6 +50,46 @@ func main() {
     server.Run()
 }
 ```
+
+## Redis Synchronization
+
+Go-CORBA now includes a Redis-based synchronization system that allows multiple instances to synchronize their state using Redis Streams and queues:
+
+```go
+package main
+
+import (
+    "context"
+    "github.com/ifabos/go-corba/corba"
+)
+
+func main() {
+    // Create sync configuration
+    config := corba.DefaultSyncConfiguration()
+    config.InstanceID = "instance1"
+    config.RedisAddr = "localhost:6379"
+    
+    // Create synchronizer
+    syncManager := corba.NewRedisStreamSynchronizer(config)
+    
+    // Start synchronization
+    ctx := context.Background()
+    if err := syncManager.Start(ctx); err != nil {
+        panic(err)
+    }
+    defer syncManager.Stop()
+    
+    // Create ORB and synchronized event service
+    orb := corba.Init()
+    eventService := corba.NewSynchronizedEventService(orb, syncManager)
+    
+    // Operations will now be synchronized across instances
+    channel, err := eventService.CreateChannel("test", corba.PushChannelType)
+    // This will be synchronized to other instances
+}
+```
+
+For detailed documentation on the Redis synchronization system, see [docs/REDIS_SYNC.md](docs/REDIS_SYNC.md).
 
 ## IDL Compiler
 
